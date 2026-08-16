@@ -587,3 +587,45 @@ export const deleteProduct = async (req, res) => {
   }
 };
 
+export const getProductsByCategorySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+
+    const category = await Category.findOne({
+      slug: slug.toLowerCase(),
+      isActive: true,
+    });
+
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: "Category not found",
+      });
+    }
+
+    const products = await Product.find({
+      category: category._id,
+      status: "active",
+    })
+      .populate("seller", "name email companyName")
+      .populate("category", "name slug")
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    res.status(200).json({
+      success: true,
+      count: products.length,
+      data: products,
+    });
+  } catch (error) {
+    console.error("Get products by category slug error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch category products",
+    });
+  }
+};
+
+
+

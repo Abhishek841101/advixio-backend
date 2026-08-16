@@ -1,4 +1,5 @@
 import express from "express";
+
 import protect from "../middleware/authMiddleware.js";
 import upload from "../middleware/uploadMiddleware.js";
 
@@ -9,15 +10,52 @@ import {
   getMyProducts,
   updateProduct,
   deleteProduct,
+  getProductsByCategorySlug,
 } from "../controllers/productController.js";
 
 const router = express.Router();
 
-router.get("/my-listings", protect, getMyProducts);
+// ==========================================
+// MY LISTINGS
+// ==========================================
 
-router.get("/", getProducts);
+router.get(
+  "/my-listings",
+  protect,
+  getMyProducts
+);
 
-router.get("/:slug", getProductBySlug);
+// ==========================================
+// ALL PRODUCTS
+// ==========================================
+
+router.get(
+  "/",
+  getProducts
+);
+
+// ==========================================
+// PRODUCTS BY CATEGORY
+// IMPORTANT: This must come before /:slug
+// ==========================================
+
+router.get(
+  "/category/:slug",
+  getProductsByCategorySlug
+);
+
+// ==========================================
+// SINGLE PRODUCT
+// ==========================================
+
+router.get(
+  "/:slug",
+  getProductBySlug
+);
+
+// ==========================================
+// CREATE PRODUCT
+// ==========================================
 
 router.post(
   "/",
@@ -26,8 +64,24 @@ router.post(
   createProduct
 );
 
-router.put("/:id", protect, updateProduct);
+// ==========================================
+// UPDATE PRODUCT
+// ==========================================
 
-router.delete("/:id", protect, deleteProduct);
+router.put(
+  "/:id",
+  protect,
+  updateProduct
+);
+
+// ==========================================
+// DELETE PRODUCT
+// ==========================================
+
+router.delete(
+  "/:id",
+  protect,
+  deleteProduct
+);
 
 export default router;
