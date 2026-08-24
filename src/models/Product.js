@@ -1,136 +1,10 @@
-// import mongoose from "mongoose";
-
-// const specificationSchema = new mongoose.Schema(
-//   {
-//     label: {
-//       type: String,
-//       required: true,
-//       trim: true,
-//     },
-
-//     value: {
-//       type: String,
-//       required: true,
-//       trim: true,
-//     },
-//   },
-//   { _id: false }
-// );
-
-// const productSchema = new mongoose.Schema(
-//   {
-//     name: {
-//       type: String,
-//       required: true,
-//       trim: true,
-//     },
-
-//     slug: {
-//       type: String,
-//       required: true,
-//       unique: true,
-//       lowercase: true,
-//       trim: true,
-//     },
-
-//     shortDescription: {
-//       type: String,
-//       trim: true,
-//     },
-
-//     description: {
-//       type: String,
-//       trim: true,
-//     },
-
-//     category: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "Category",
-//       required: true,
-//     },
-
-//     subcategory: {
-//       type: String,
-//       trim: true,
-//     },
-
-//     brand: {
-//       type: String,
-//       trim: true,
-//     },
-
-//     model: {
-//       type: String,
-//       trim: true,
-//     },
-
-//     price: {
-//       type: Number,
-//     },
-
-//     unit: {
-//       type: String,
-//       default: "Piece",
-//       trim: true,
-//     },
-
-//     images: [
-//       {
-//         type: String,
-//       },
-//     ],
-
-//     specifications: [specificationSchema],
-
-//     // Product owner
-//     seller: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "User",
-//       required: true,
-//       index: true,
-//     },
-
-//     companyName: {
-//       type: String,
-//       trim: true,
-//     },
-
-//     location: {
-//       city: String,
-//       state: String,
-//       country: {
-//         type: String,
-//         default: "India",
-//       },
-//     },
-
-//     status: {
-//       type: String,
-//       enum: ["active", "inactive", "pending"],
-//       default: "active",
-//     },
-
-//     isFeatured: {
-//       type: Boolean,
-//       default: false,
-//     },
-
-//     views: {
-//       type: Number,
-//       default: 0,
-//     },
-//   },
-//   {
-//     timestamps: true,
-//   }
-// );
-
-// const Product = mongoose.model("Product", productSchema);
-
-// export default Product;
 
 
 import mongoose from "mongoose";
+
+// ==========================================
+// SPECIFICATION SCHEMA
+// ==========================================
 
 const specificationSchema = new mongoose.Schema(
   {
@@ -146,8 +20,14 @@ const specificationSchema = new mongoose.Schema(
       trim: true,
     },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
+
+// ==========================================
+// CUSTOM FIELD SCHEMA
+// ==========================================
 
 const customFieldSchema = new mongoose.Schema(
   {
@@ -163,8 +43,14 @@ const customFieldSchema = new mongoose.Schema(
       trim: true,
     },
   },
-  { _id: false }
+  {
+    _id: false,
+  }
 );
+
+// ==========================================
+// PRODUCT SCHEMA
+// ==========================================
 
 const productSchema = new mongoose.Schema(
   {
@@ -185,11 +71,13 @@ const productSchema = new mongoose.Schema(
     shortDescription: {
       type: String,
       trim: true,
+      default: "",
     },
 
     description: {
       type: String,
       trim: true,
+      default: "",
     },
 
     category: {
@@ -201,37 +89,54 @@ const productSchema = new mongoose.Schema(
     subcategory: {
       type: String,
       trim: true,
+      default: "",
     },
 
     brand: {
       type: String,
       trim: true,
+      default: "",
     },
 
     model: {
       type: String,
       trim: true,
+      default: "",
     },
 
     price: {
       type: Number,
+      default: undefined,
     },
 
     unit: {
       type: String,
-      default: "Piece",
       trim: true,
+      default: "Piece",
     },
 
-    images: [
-      {
-        type: String,
-      },
-    ],
+    images: {
+      type: [String],
+      default: [],
+    },
 
-    specifications: [specificationSchema],
+    // ==========================================
+    // SPECIFICATIONS
+    // ==========================================
 
-    customFields: [customFieldSchema],
+    specifications: {
+      type: [specificationSchema],
+      default: [],
+    },
+
+    // ==========================================
+    // CUSTOM FIELDS
+    // ==========================================
+
+    customFields: {
+      type: [customFieldSchema],
+      default: [],
+    },
 
     seller: {
       type: mongoose.Schema.Types.ObjectId,
@@ -243,13 +148,25 @@ const productSchema = new mongoose.Schema(
     companyName: {
       type: String,
       trim: true,
+      default: "",
     },
 
     location: {
-      city: String,
-      state: String,
+      city: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+
+      state: {
+        type: String,
+        trim: true,
+        default: "",
+      },
+
       country: {
         type: String,
+        trim: true,
         default: "India",
       },
     },
@@ -275,9 +192,26 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-const Product = mongoose.model(
-  "Product",
-  productSchema
+// ==========================================
+// DEBUG
+// ==========================================
+
+console.log(
+  "CUSTOM FIELDS PATH:",
+  productSchema.path("customFields")
 );
+
+console.log(
+  "SPECIFICATIONS PATH:",
+  productSchema.path("specifications")
+);
+
+// ==========================================
+// MODEL
+// ==========================================
+
+const Product =
+  mongoose.models.Product ||
+  mongoose.model("Product", productSchema);
 
 export default Product;
