@@ -1,3 +1,4 @@
+
 import express from "express";
 
 import protect from "../middleware/authMiddleware.js";
@@ -15,48 +16,19 @@ import {
 
 const router = express.Router();
 
-// ==========================================
-// MY LISTINGS
-// ==========================================
+// Authenticated user's listings — before /:slug
+router.get("/my-listings", protect, getMyProducts);
 
-router.get(
-  "/my-listings",
-  protect,
-  getMyProducts
-);
+// All active products
+router.get("/", getProducts);
 
-// ==========================================
-// ALL PRODUCTS
-// ==========================================
+// Products by category slug — before /:slug
+router.get("/category/:slug", getProductsByCategorySlug);
 
-router.get(
-  "/",
-  getProducts
-);
+// Single product by slug
+router.get("/:slug", getProductBySlug);
 
-// ==========================================
-// PRODUCTS BY CATEGORY
-// IMPORTANT: This must come before /:slug
-// ==========================================
-
-router.get(
-  "/category/:slug",
-  getProductsByCategorySlug
-);
-
-// ==========================================
-// SINGLE PRODUCT
-// ==========================================
-
-router.get(
-  "/:slug",
-  getProductBySlug
-);
-
-// ==========================================
-// CREATE PRODUCT
-// ==========================================
-
+// Create product
 router.post(
   "/",
   protect,
@@ -64,24 +36,10 @@ router.post(
   createProduct
 );
 
-// ==========================================
-// UPDATE PRODUCT
-// ==========================================
+// Update product by MongoDB ID
+router.put("/:id", protect, updateProduct);
 
-router.put(
-  "/:id",
-  protect,
-  updateProduct
-);
-
-// ==========================================
-// DELETE PRODUCT
-// ==========================================
-
-router.delete(
-  "/:id",
-  protect,
-  deleteProduct
-);
+// Delete product by MongoDB ID
+router.delete("/:id", protect, deleteProduct);
 
 export default router;

@@ -1,5 +1,4 @@
 
-
 import mongoose from "mongoose";
 
 // ==========================================
@@ -13,7 +12,6 @@ const specificationSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-
     value: {
       type: String,
       required: true,
@@ -36,7 +34,6 @@ const customFieldSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-
     value: {
       type: String,
       required: true,
@@ -54,12 +51,24 @@ const customFieldSchema = new mongoose.Schema(
 
 const productSchema = new mongoose.Schema(
   {
+    // Product name
     name: {
       type: String,
       required: true,
       trim: true,
     },
 
+    // Normalized name for case-insensitive duplicate checks.
+    // Do not enable the unique index until existing records
+    // have been migrated and duplicate names resolved.
+    normalizedName: {
+      type: String,
+      required: true,
+      trim: true,
+      lowercase: true,
+    },
+
+    // SEO-friendly product URL
     slug: {
       type: String,
       required: true,
@@ -107,6 +116,7 @@ const productSchema = new mongoose.Schema(
     price: {
       type: Number,
       default: undefined,
+      min: 0,
     },
 
     unit: {
@@ -120,18 +130,10 @@ const productSchema = new mongoose.Schema(
       default: [],
     },
 
-    // ==========================================
-    // SPECIFICATIONS
-    // ==========================================
-
     specifications: {
       type: [specificationSchema],
       default: [],
     },
-
-    // ==========================================
-    // CUSTOM FIELDS
-    // ==========================================
 
     customFields: {
       type: [customFieldSchema],
@@ -193,8 +195,17 @@ const productSchema = new mongoose.Schema(
 );
 
 // ==========================================
-// DEBUG
+// INDEXES
 // ==========================================
+
+// Slug uniqueness is already declared on the slug field.
+// Add the normalizedName unique index only after migration:
+// productSchema.index({ normalizedName: 1 }, { unique: true });
+
+console.log(
+  "NORMALIZED NAME PATH:",
+  productSchema.path("normalizedName")
+);
 
 console.log(
   "CUSTOM FIELDS PATH:",

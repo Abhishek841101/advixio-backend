@@ -233,34 +233,14 @@ const cleanCustomFields = (
 // CREATE PRODUCT
 // ==========================================
 
-export const createProduct = async (
-  req,
-  res
-) => {
 
+export const createProduct = async (req, res) => {
   try {
-
-    console.log(
-      "\n========================================"
-    );
-
-    console.log(
-      "CREATE PRODUCT"
-    );
-
-    console.log(
-      "========================================"
-    );
-
-    console.log(
-      "BODY:",
-      req.body
-    );
-
-    console.log(
-      "FILES:",
-      req.files?.length || 0
-    );
+    console.log("\n========================================");
+    console.log("CREATE PRODUCT");
+    console.log("========================================");
+    console.log("BODY:", req.body);
+    console.log("FILES:", req.files?.length || 0);
 
     // ==========================================
     // BODY
@@ -283,50 +263,58 @@ export const createProduct = async (
     } = req.body;
 
     // ==========================================
-    // CUSTOM FIELD RAW DEBUG
+    // DEBUG CUSTOM FIELDS
     // ==========================================
 
-    console.log(
-      "\n========== CUSTOM FIELDS RAW =========="
-    );
-
-    console.log(
-      "customFields:",
-      customFields
-    );
-
-    console.log(
-      "typeof customFields:",
-      typeof customFields
-    );
-
-    console.log(
-      "Array.isArray:",
-      Array.isArray(customFields)
-    );
+    console.log("\n========== CUSTOM FIELDS RAW ==========");
+    console.log("customFields:", customFields);
+    console.log("typeof customFields:", typeof customFields);
+    console.log("Array.isArray:", Array.isArray(customFields));
 
     // ==========================================
     // BASIC VALIDATION
     // ==========================================
 
-    if (
-      !name ||
-      !String(name).trim()
-    ) {
+    const cleanName = String(name ?? "")
+      .trim()
+      .replace(/\s+/g, " ");
 
+    if (!cleanName) {
       return res.status(400).json({
         success: false,
-        message:
-          "Product name is required",
+        message: "Product name is required",
       });
     }
 
     if (!category) {
-
       return res.status(400).json({
         success: false,
+        message: "Category is required",
+      });
+    }
+
+    if (!req.user?._id) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    // ==========================================
+    // NORMALIZED NAME + DUPLICATE CHECK
+    // ==========================================
+
+    const normalizedName = cleanName.toLowerCase();
+
+    const duplicateProduct = await Product.findOne({
+      normalizedName,
+    }).select("_id name");
+
+    if (duplicateProduct) {
+      return res.status(409).json({
+        success: false,
         message:
-          "Category is required",
+          "Product name already exists. Please use a unique product name.",
       });
     }
 
@@ -337,77 +325,74 @@ export const createProduct = async (
     let categoryExists;
 
     try {
-
-      categoryExists =
-        await resolveCategory(
-          category
-        );
-
+      categoryExists = await resolveCategory(category);
     } catch (error) {
-
-      console.error(
-        "CATEGORY ERROR:",
-        error
-      );
+      console.error("CATEGORY ERROR:", error);
 
       return res.status(400).json({
         success: false,
-        message:
-          error.message,
+        message: error.message || "Failed to resolve category",
       });
     }
 
-    console.log(
-      "CATEGORY NAME:",
-      categoryExists.name
-    );
+    if (!categoryExists) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid category",
+      });
+    }
 
-    console.log(
-      "CATEGORY ID:",
-      categoryExists._id
-    );
-
-    console.log(
-      "CATEGORY SLUG:",
-      categoryExists.slug
-    );
+    console.log("CATEGORY NAME:", categoryExists.name);
+    console.log("CATEGORY ID:", categoryExists._id);
+    console.log("CATEGORY SLUG:", categoryExists.slug);
 
     // ==========================================
     // IMAGES
     // ==========================================
 
-    const imageUrls =
-      req.files
-        ? req.files.map(
-            (file) => file.path
-          )
-        : [];
+    const uploadedFiles = req.files || [];
 
-    if (imageUrls.length > 3) {
-
+    if (uploadedFiles.length > 3) {
       return res.status(400).json({
         success: false,
-        message:
-          "You can upload maximum 3 images",
+        message: "You can upload maximum 3 images",
+      });
+    }
+
+    const imageUrls = uploadedFiles
+      .map((file) => file.path)
+      .filter(Boolean);
+
+    if (imageUrls.length !== uploadedFiles.length) {
+      return res.status(400).json({
+        success: false,
+        message: "One or more uploaded images are invalid",
       });
     }
 
     // ==========================================
-    // PRODUCT SLUG
+    // UNIQUE SEO SLUG
     // ==========================================
 
-    let slug =
-      createSlug(name);
+    const baseSlug = createSlug(cleanName);
 
-    const existingProduct =
-      await Product.findOne({
-        slug,
+    if (!baseSlug) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to generate product URL from this name",
       });
+    }
 
-    if (existingProduct) {
+    let slug = baseSlug;
+    let slugAttempt = 0;
 
-      slug =
-        `${slug}-${Date.now()}`;
+    // Check for an existing slug.
+    // The database unique index remains the final protection
+    // against concurrent requests.
+    while (await Product.exists({ slug })) {
+      slugAttempt += 1;
+
+      slug = `${baseSlug}-${Date.now()}-${slugAttempt}`;
     }
 
     // ==========================================
@@ -415,31 +400,37 @@ export const createProduct = async (
     // ==========================================
 
     let productLocation = {
-      city:
-        req.user?.city || "",
-
-      state:
-        req.user?.state || "",
-
-      country:
-        "India",
+      city: req.user?.city || "",
+      state: req.user?.state || "",
+      country: "India",
     };
 
-    if (location) {
-
+    if (location !== undefined && location !== null && location !== "") {
       try {
-
-        productLocation =
+        const parsedLocation =
           typeof location === "string"
             ? JSON.parse(location)
             : location;
 
-      } catch (error) {
+        if (
+          typeof parsedLocation !== "object" ||
+          Array.isArray(parsedLocation)
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Location must be a valid object",
+          });
+        }
 
+        productLocation = {
+          city: parsedLocation.city || "",
+          state: parsedLocation.state || "",
+          country: parsedLocation.country || "India",
+        };
+      } catch (error) {
         return res.status(400).json({
           success: false,
-          message:
-            "Invalid location data",
+          message: "Invalid location data",
         });
       }
     }
@@ -451,24 +442,18 @@ export const createProduct = async (
     let parsedSpecifications = [];
 
     try {
+      parsedSpecifications = parseArrayField(
+        specifications,
+        "Specifications"
+      );
 
-      parsedSpecifications =
-        parseArrayField(
-          specifications,
-          "Specifications"
-        );
-
-      parsedSpecifications =
-        cleanSpecifications(
-          parsedSpecifications
-        );
-
+      parsedSpecifications = cleanSpecifications(
+        parsedSpecifications
+      );
     } catch (error) {
-
       return res.status(400).json({
         success: false,
-        message:
-          error.message,
+        message: error.message || "Invalid specifications",
       });
     }
 
@@ -479,29 +464,20 @@ export const createProduct = async (
     let parsedCustomFields = [];
 
     try {
-
-      parsedCustomFields =
-        parseArrayField(
-          customFields,
-          "Custom fields"
-        );
-
-      parsedCustomFields =
-        cleanCustomFields(
-          parsedCustomFields
-        );
-
-    } catch (error) {
-
-      console.error(
-        "CUSTOM FIELD PARSE ERROR:",
-        error
+      parsedCustomFields = parseArrayField(
+        customFields,
+        "Custom fields"
       );
+
+      parsedCustomFields = cleanCustomFields(
+        parsedCustomFields
+      );
+    } catch (error) {
+      console.error("CUSTOM FIELD PARSE ERROR:", error);
 
       return res.status(400).json({
         success: false,
-        message:
-          error.message,
+        message: error.message || "Invalid custom fields",
       });
     }
 
@@ -516,18 +492,12 @@ export const createProduct = async (
       price !== null &&
       price !== ""
     ) {
+      parsedPrice = Number(price);
 
-      parsedPrice =
-        Number(price);
-
-      if (
-        Number.isNaN(parsedPrice)
-      ) {
-
+      if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
         return res.status(400).json({
           success: false,
-          message:
-            "Invalid price",
+          message: "Price must be a valid non-negative number",
         });
       }
     }
@@ -537,186 +507,170 @@ export const createProduct = async (
     // ==========================================
 
     const productData = {
-
-      name:
-        String(name).trim(),
-
+      name: cleanName,
+      normalizedName,
       slug,
 
       shortDescription:
-        shortDescription?.trim() || "",
+        typeof shortDescription === "string"
+          ? shortDescription.trim()
+          : "",
 
       description:
-        description?.trim() || "",
+        typeof description === "string"
+          ? description.trim()
+          : "",
 
-      // IMPORTANT
-      // Save real MongoDB ObjectId
-      category:
-        categoryExists._id,
+      category: categoryExists._id,
 
       subcategory:
-        subcategory?.trim() || "",
+        typeof subcategory === "string"
+          ? subcategory.trim()
+          : "",
 
       brand:
-        brand?.trim() || "",
+        typeof brand === "string"
+          ? brand.trim()
+          : "",
 
       model:
-        model?.trim() || "",
+        typeof model === "string"
+          ? model.trim()
+          : "",
 
-      price:
-        parsedPrice,
+      price: parsedPrice,
 
       unit:
-        unit?.trim() || "Piece",
+        typeof unit === "string" && unit.trim()
+          ? unit.trim()
+          : "Piece",
 
-      images:
-        imageUrls,
+      images: imageUrls,
 
-      specifications:
-        parsedSpecifications,
+      specifications: parsedSpecifications,
 
-      customFields:
-        parsedCustomFields,
+      customFields: parsedCustomFields,
 
-      seller:
-        req.user._id,
+      seller: req.user._id,
 
       companyName:
-        companyName?.trim() ||
+        (typeof companyName === "string"
+          ? companyName.trim()
+          : "") ||
         req.user?.companyName ||
         "",
 
-      location: {
-
-        city:
-          productLocation.city || "",
-
-        state:
-          productLocation.state || "",
-
-        country:
-          productLocation.country ||
-          "India",
-      },
+      location: productLocation,
     };
 
-    console.log(
-      "\n========== PRODUCT DATA BEFORE CREATE =========="
-    );
-
-    console.log(
-      JSON.stringify(
-        productData,
-        null,
-        2
-      )
-    );
+    console.log("\n========== PRODUCT DATA BEFORE CREATE ==========");
+    console.log(JSON.stringify(productData, null, 2));
 
     // ==========================================
     // CREATE PRODUCT
     // ==========================================
 
-    const product =
-      await Product.create(
-        productData
+    const product = await Product.create(productData);
+
+    console.log("PRODUCT CREATED:", product._id);
+
+    // ==========================================
+    // FETCH SAVED PRODUCT
+    // ==========================================
+
+    const savedProduct = await Product.findById(product._id)
+      .populate("category", "name slug")
+      .populate(
+        "seller",
+        "name email phone companyName city state"
       );
 
-    console.log(
-      "PRODUCT CREATED:",
-      product._id
-    );
-
-    // ==========================================
-    // DATABASE CHECK
-    // ==========================================
-
-    const savedProduct =
-      await Product.findById(
-        product._id
-      ).lean();
-
-    // ==========================================
-    // POPULATE
-    // ==========================================
-
-    const populatedProduct =
-      await Product.findById(
-        product._id
-      )
-        .populate(
-          "category",
-          "name slug"
-        )
-        .populate(
-          "seller",
-          "name email phone companyName city state"
-        );
+    if (!savedProduct) {
+      return res.status(500).json({
+        success: false,
+        message: "Product was created but could not be fetched",
+      });
+    }
 
     // ==========================================
     // RESPONSE
     // ==========================================
 
-    const responseProduct =
-      populatedProduct.toObject();
+    const responseProduct = savedProduct.toObject();
 
     responseProduct.customFields =
-      savedProduct?.customFields || [];
+      responseProduct.customFields || [];
+
+    responseProduct.specifications =
+      responseProduct.specifications || [];
+
+    responseProduct.images =
+      responseProduct.images || [];
 
     return res.status(201).json({
-
       success: true,
-
-      message:
-        "Product listed successfully",
-
-      data:
-        responseProduct,
+      message: "Product listed successfully",
+      data: responseProduct,
     });
-
   } catch (error) {
+    console.error("\n========================================");
+    console.error("CREATE PRODUCT ERROR");
+    console.error("========================================");
+    console.error("Name:", error.name);
+    console.error("Message:", error.message);
+    console.error(error);
 
-    console.error(
-      "\n========================================"
-    );
+    // ==========================================
+    // DUPLICATE KEY ERROR
+    // ==========================================
 
-    console.error(
-      "CREATE PRODUCT ERROR"
-    );
+    if (error.code === 11000) {
+      const duplicateField = Object.keys(
+        error.keyPattern || {}
+      )[0];
 
-    console.error(
-      "========================================"
-    );
+      let message = "A duplicate value already exists.";
 
-    console.error(
-      "Name:",
-      error.name
-    );
+      if (duplicateField === "normalizedName") {
+        message =
+          "Product name already exists. Please use a unique product name.";
+      } else if (duplicateField === "slug") {
+        message =
+          "Product URL conflict. Please try creating the product again.";
+      }
 
-    console.error(
-      "Message:",
-      error.message
-    );
+      return res.status(409).json({
+        success: false,
+        message,
+      });
+    }
 
-    console.error(
-      "Error:",
-      error
-    );
+    // ==========================================
+    // VALIDATION ERROR
+    // ==========================================
+
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    // ==========================================
+    // SERVER ERROR
+    // ==========================================
 
     return res.status(500).json({
-
       success: false,
-
-      message:
-        "Failed to create product",
-
+      message: "Failed to create product",
       error:
-        process.env.NODE_ENV ===
-        "development"
+        process.env.NODE_ENV === "development"
           ? error.message
           : undefined,
     });
   }
 };
+
 
 // ==========================================
 // GET MY PRODUCTS
@@ -899,553 +853,418 @@ export const getProductBySlug =
 // UPDATE PRODUCT
 // ==========================================
 
-export const updateProduct =
-  async (
-    req,
-    res
-  ) => {
 
-    try {
-
-      console.log(
-        "\n========================================"
-      );
-
-      console.log(
-        "UPDATE PRODUCT"
-      );
-
-      console.log(
-        "========================================"
-      );
-
-      console.log(
-        "Product ID:",
-        req.params.id
-      );
-
-      console.log(
-        "BODY:",
-        req.body
-      );
-
-      console.log(
-        "FILES:",
-        req.files?.length || 0
-      );
-
-      // ==========================================
-      // FIND PRODUCT
-      // ==========================================
-
-      const product =
-        await Product.findById(
-          req.params.id
-        );
-
-      if (!product) {
-
-        return res.status(404).json({
-
-          success: false,
-
-          message:
-            "Product not found",
-        });
-      }
-
-      // ==========================================
-      // OWNER CHECK
-      // ==========================================
-
-      if (
-        product.seller.toString() !==
-        req.user._id.toString()
-      ) {
-
-        return res.status(403).json({
-
-          success: false,
-
-          message:
-            "You can only edit your own products",
-        });
-      }
-
-      // ==========================================
-      // BASIC FIELDS
-      // ==========================================
-
-      const {
-        name,
-        shortDescription,
-        description,
-        category,
-        subcategory,
-        brand,
-        model,
-        price,
-        unit,
-        companyName,
-        location,
-      } = req.body;
-
-      // ==========================================
-      // NAME
-      // ==========================================
-
-      if (
-        name !== undefined
-      ) {
-
-        if (
-          !String(name).trim()
-        ) {
-
-          return res.status(400).json({
-
-            success: false,
-
-            message:
-              "Product name is required",
-          });
-        }
-
-        product.name =
-          String(name).trim();
-
-        let newSlug =
-          createSlug(name);
-
-        const existingSlug =
-          await Product.findOne({
-
-            slug:
-              newSlug,
-
-            _id: {
-              $ne:
-                product._id,
-            },
-          });
-
-        if (existingSlug) {
-
-          newSlug =
-            `${newSlug}-${Date.now()}`;
-        }
-
-        product.slug =
-          newSlug;
-      }
-
-      // ==========================================
-      // SHORT DESCRIPTION
-      // ==========================================
-
-      if (
-        shortDescription !==
-        undefined
-      ) {
-
-        product.shortDescription =
-          shortDescription?.trim() ||
-          "";
-      }
-
-      // ==========================================
-      // DESCRIPTION
-      // ==========================================
-
-      if (
-        description !== undefined
-      ) {
-
-        product.description =
-          description?.trim() ||
-          "";
-      }
-
-      // ==========================================
-      // CATEGORY
-      // ==========================================
-
-      if (
-        category !== undefined
-      ) {
-
-        try {
-
-          const categoryExists =
-            await resolveCategory(
-              category
-            );
-
-          product.category =
-            categoryExists._id;
-
-          console.log(
-            "UPDATED CATEGORY:",
-            categoryExists.name
-          );
-
-          console.log(
-            "UPDATED CATEGORY ID:",
-            categoryExists._id
-          );
-
-          console.log(
-            "UPDATED CATEGORY SLUG:",
-            categoryExists.slug
-          );
-
-        } catch (error) {
-
-          return res.status(400).json({
-
-            success: false,
-
-            message:
-              error.message,
-          });
-        }
-      }
-
-      // ==========================================
-      // SUBCATEGORY
-      // ==========================================
-
-      if (
-        subcategory !==
-        undefined
-      ) {
-
-        product.subcategory =
-          subcategory?.trim() ||
-          "";
-      }
-
-      // ==========================================
-      // BRAND
-      // ==========================================
-
-      if (
-        brand !== undefined
-      ) {
-
-        product.brand =
-          brand?.trim() ||
-          "";
-      }
-
-      // ==========================================
-      // MODEL
-      // ==========================================
-
-      if (
-        model !== undefined
-      ) {
-
-        product.model =
-          model?.trim() ||
-          "";
-      }
-
-      // ==========================================
-      // PRICE
-      // ==========================================
-
-      if (
-        price !== undefined
-      ) {
-
-        if (
-          price === "" ||
-          price === null
-        ) {
-
-          product.price =
-            undefined;
-
-        } else {
-
-          const parsedPrice =
-            Number(price);
-
-          if (
-            Number.isNaN(
-              parsedPrice
-            )
-          ) {
-
-            return res.status(400).json({
-
-              success: false,
-
-              message:
-                "Invalid price",
-            });
-          }
-
-          product.price =
-            parsedPrice;
-        }
-      }
-
-      // ==========================================
-      // UNIT
-      // ==========================================
-
-      if (
-        unit !== undefined
-      ) {
-
-        product.unit =
-          unit?.trim() ||
-          "Piece";
-      }
-
-      // ==========================================
-      // COMPANY NAME
-      // ==========================================
-
-      if (
-        companyName !==
-        undefined
-      ) {
-
-        product.companyName =
-          companyName?.trim() ||
-          "";
-      }
-
-      // ==========================================
-      // SPECIFICATIONS
-      // ==========================================
-
-      if (
-        req.body.specifications !==
-        undefined
-      ) {
-
-        try {
-
-          let specifications =
-            parseArrayField(
-              req.body.specifications,
-              "Specifications"
-            );
-
-          specifications =
-            cleanSpecifications(
-              specifications
-            );
-
-          product.specifications =
-            specifications;
-
-        } catch (error) {
-
-          return res.status(400).json({
-
-            success: false,
-
-            message:
-              error.message,
-          });
-        }
-      }
-
-      // ==========================================
-      // CUSTOM FIELDS
-      // ==========================================
-
-      if (
-        req.body.customFields !==
-        undefined
-      ) {
-
-        try {
-
-          let customFields =
-            parseArrayField(
-              req.body.customFields,
-              "Custom fields"
-            );
-
-          customFields =
-            cleanCustomFields(
-              customFields
-            );
-
-          product.customFields =
-            customFields;
-
-        } catch (error) {
-
-          return res.status(400).json({
-
-            success: false,
-
-            message:
-              error.message,
-          });
-        }
-      }
-
-      // ==========================================
-      // LOCATION
-      // ==========================================
-
-      if (
-        location !== undefined
-      ) {
-
-        try {
-
-          product.location =
-            typeof location ===
-            "string"
-
-              ? JSON.parse(location)
-
-              : location;
-
-        } catch (error) {
-
-          return res.status(400).json({
-
-            success: false,
-
-            message:
-              "Invalid location data",
-          });
-        }
-      }
-
-      // ==========================================
-      // IMAGES
-      // ==========================================
-
-      if (
-        req.files &&
-        req.files.length > 0
-      ) {
-
-        const newImages =
-          req.files.map(
-            (file) =>
-              file.path
-          );
-
-        if (
-          newImages.length > 3
-        ) {
-
-          return res.status(400).json({
-
-            success: false,
-
-            message:
-              "You can upload maximum 3 images",
-          });
-        }
-
-        product.images =
-          newImages;
-      }
-
-      // ==========================================
-      // SAVE
-      // ==========================================
-
-      await product.save();
-
-      // ==========================================
-      // DATABASE CHECK
-      // ==========================================
-
-      const savedProduct =
-        await Product.findById(
-          product._id
-        ).lean();
-
-      // ==========================================
-      // POPULATE
-      // ==========================================
-
-      const updatedProduct =
-        await Product.findById(
-          product._id
-        )
-          .populate(
-            "category",
-            "name slug"
-          )
-          .populate(
-            "seller",
-            "name email phone companyName city state"
-          );
-
-      // ==========================================
-      // RESPONSE
-      // ==========================================
-
-      const responseProduct =
-        updatedProduct.toObject();
-
-      responseProduct.customFields =
-        savedProduct?.customFields ||
-        [];
-
-      return res.status(200).json({
-
-        success: true,
-
-        message:
-          "Product updated successfully",
-
-        data:
-          responseProduct,
-      });
-
-    } catch (error) {
-
-      console.error(
-        "\nUPDATE PRODUCT ERROR:"
-      );
-
-      console.error(
-        "Name:",
-        error.name
-      );
-
-      console.error(
-        "Message:",
-        error.message
-      );
-
-      console.error(
-        error
-      );
-
-      return res.status(500).json({
-
+export const updateProduct = async (req, res) => {
+  try {
+    console.log("\n========================================");
+    console.log("UPDATE PRODUCT");
+    console.log("========================================");
+    console.log("Product ID:", req.params.id);
+    console.log("BODY:", req.body);
+    console.log("FILES:", req.files?.length || 0);
+
+    // ==========================================
+    // FIND PRODUCT
+    // ==========================================
+
+    const product = await Product.findById(req.params.id);
+
+    if (!product) {
+      return res.status(404).json({
         success: false,
-
-        message:
-          "Failed to update product",
-
-        error:
-          process.env.NODE_ENV ===
-          "development"
-
-            ? error.message
-
-            : undefined,
+        message: "Product not found",
       });
     }
-  };
+
+    // ==========================================
+    // OWNER CHECK
+    // ==========================================
+
+    if (
+      !product.seller ||
+      product.seller.toString() !== req.user?._id?.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only edit your own products",
+      });
+    }
+
+    // ==========================================
+    // BASIC FIELDS
+    // ==========================================
+
+    const {
+      name,
+      shortDescription,
+      description,
+      category,
+      subcategory,
+      brand,
+      model,
+      price,
+      unit,
+      companyName,
+      location,
+    } = req.body;
+
+    // ==========================================
+    // NAME + NORMALIZED NAME
+    // ==========================================
+
+    if (name !== undefined) {
+      const cleanName = String(name)
+        .trim()
+        .replace(/\s+/g, " ");
+
+      if (!cleanName) {
+        return res.status(400).json({
+          success: false,
+          message: "Product name is required",
+        });
+      }
+
+      const normalizedName = cleanName.toLowerCase();
+
+      // Prevent duplicate names, ignoring case and extra spaces.
+      const duplicateProduct = await Product.findOne({
+        normalizedName,
+        _id: { $ne: product._id },
+      }).select("_id name");
+
+      if (duplicateProduct) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Product name already exists. Please use a unique product name.",
+        });
+      }
+
+      product.name = cleanName;
+      product.normalizedName = normalizedName;
+    } else if (!product.normalizedName && product.name) {
+      // Backward compatibility for records created before this field.
+      product.normalizedName = String(product.name)
+        .trim()
+        .replace(/\s+/g, " ")
+        .toLowerCase();
+    }
+
+    // IMPORTANT:
+    // Keep product.slug unchanged during an edit.
+    // This preserves the existing product URL.
+
+    // ==========================================
+    // SHORT DESCRIPTION
+    // ==========================================
+
+    if (shortDescription !== undefined) {
+      product.shortDescription =
+        typeof shortDescription === "string"
+          ? shortDescription.trim()
+          : "";
+    }
+
+    // ==========================================
+    // DESCRIPTION
+    // ==========================================
+
+    if (description !== undefined) {
+      product.description =
+        typeof description === "string"
+          ? description.trim()
+          : "";
+    }
+
+    // ==========================================
+    // CATEGORY
+    // ==========================================
+
+    if (category !== undefined) {
+      try {
+        const categoryExists = await resolveCategory(category);
+
+        if (!categoryExists) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid category",
+          });
+        }
+
+        product.category = categoryExists._id;
+
+        console.log("UPDATED CATEGORY:", categoryExists.name);
+        console.log("UPDATED CATEGORY ID:", categoryExists._id);
+        console.log("UPDATED CATEGORY SLUG:", categoryExists.slug);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message || "Failed to update category",
+        });
+      }
+    }
+
+    // ==========================================
+    // SUBCATEGORY
+    // ==========================================
+
+    if (subcategory !== undefined) {
+      product.subcategory =
+        typeof subcategory === "string"
+          ? subcategory.trim()
+          : "";
+    }
+
+    // ==========================================
+    // BRAND
+    // ==========================================
+
+    if (brand !== undefined) {
+      product.brand =
+        typeof brand === "string" ? brand.trim() : "";
+    }
+
+    // ==========================================
+    // MODEL
+    // ==========================================
+
+    if (model !== undefined) {
+      product.model =
+        typeof model === "string" ? model.trim() : "";
+    }
+
+    // ==========================================
+    // PRICE
+    // ==========================================
+
+    if (price !== undefined) {
+      if (price === "" || price === null) {
+        product.price = undefined;
+      } else {
+        const parsedPrice = Number(price);
+
+        if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+          return res.status(400).json({
+            success: false,
+            message: "Price must be a valid non-negative number",
+          });
+        }
+
+        product.price = parsedPrice;
+      }
+    }
+
+    // ==========================================
+    // UNIT
+    // ==========================================
+
+    if (unit !== undefined) {
+      product.unit =
+        typeof unit === "string" && unit.trim()
+          ? unit.trim()
+          : "Piece";
+    }
+
+    // ==========================================
+    // COMPANY NAME
+    // ==========================================
+
+    if (companyName !== undefined) {
+      product.companyName =
+        typeof companyName === "string"
+          ? companyName.trim()
+          : "";
+    }
+
+    // ==========================================
+    // SPECIFICATIONS
+    // ==========================================
+
+    if (req.body.specifications !== undefined) {
+      try {
+        let specifications = parseArrayField(
+          req.body.specifications,
+          "Specifications"
+        );
+
+        specifications = cleanSpecifications(specifications);
+        product.specifications = specifications;
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message || "Invalid specifications",
+        });
+      }
+    }
+
+    // ==========================================
+    // CUSTOM FIELDS
+    // ==========================================
+
+    if (req.body.customFields !== undefined) {
+      try {
+        let customFields = parseArrayField(
+          req.body.customFields,
+          "Custom fields"
+        );
+
+        customFields = cleanCustomFields(customFields);
+        product.customFields = customFields;
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message || "Invalid custom fields",
+        });
+      }
+    }
+
+    // ==========================================
+    // LOCATION
+    // ==========================================
+
+    if (location !== undefined) {
+      try {
+        const parsedLocation =
+          typeof location === "string"
+            ? JSON.parse(location)
+            : location;
+
+        if (
+          parsedLocation !== null &&
+          (typeof parsedLocation !== "object" ||
+            Array.isArray(parsedLocation))
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Location must be a valid object",
+          });
+        }
+
+        product.location = parsedLocation;
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid location data",
+        });
+      }
+    }
+
+    // ==========================================
+    // IMAGES
+    // ==========================================
+
+    if (req.files && req.files.length > 0) {
+      if (req.files.length > 3) {
+        return res.status(400).json({
+          success: false,
+          message: "You can upload maximum 3 images",
+        });
+      }
+
+      const newImages = req.files
+        .map((file) => file.path)
+        .filter(Boolean);
+
+      if (newImages.length !== req.files.length) {
+        return res.status(400).json({
+          success: false,
+          message: "One or more uploaded images are invalid",
+        });
+      }
+
+      // New uploads replace the existing image array,
+      // matching the previous controller's behavior.
+      product.images = newImages;
+    }
+
+    // ==========================================
+    // SAVE
+    // ==========================================
+
+    await product.save();
+
+    // ==========================================
+    // FETCH UPDATED PRODUCT
+    // ==========================================
+
+    const updatedProduct = await Product.findById(product._id)
+      .populate("category", "name slug")
+      .populate(
+        "seller",
+        "name email phone companyName city state"
+      );
+
+    if (!updatedProduct) {
+      return res.status(404).json({
+        success: false,
+        message: "Product was updated but could not be fetched",
+      });
+    }
+
+    // ==========================================
+    // RESPONSE
+    // ==========================================
+
+    const responseProduct = updatedProduct.toObject();
+
+    responseProduct.customFields =
+      responseProduct.customFields || [];
+
+    responseProduct.specifications =
+      responseProduct.specifications || [];
+
+    responseProduct.images =
+      responseProduct.images || [];
+
+    return res.status(200).json({
+      success: true,
+      message: "Product updated successfully",
+      data: responseProduct,
+    });
+  } catch (error) {
+    console.error("\nUPDATE PRODUCT ERROR:");
+    console.error("Name:", error.name);
+    console.error("Message:", error.message);
+    console.error(error);
+
+    // MongoDB duplicate-key protection.
+    if (error.code === 11000) {
+      const duplicateField = Object.keys(
+        error.keyPattern || {}
+      )[0];
+
+      const message =
+        duplicateField === "normalizedName"
+          ? "Product name already exists. Please use a unique product name."
+          : duplicateField === "slug"
+            ? "This product URL already exists."
+            : "A duplicate value already exists.";
+
+      return res.status(409).json({
+        success: false,
+        message,
+      });
+    }
+
+    // Mongoose validation errors.
+    if (error.name === "ValidationError") {
+      return res.status(400).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update product",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : undefined,
+    });
+  }
+};
+
 
 // ==========================================
 // DELETE PRODUCT
