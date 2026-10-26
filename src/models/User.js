@@ -33,7 +33,17 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+companyName: {
+  type: String,
+  trim: true,
+},
 
+companySlug: {
+  type: String,
+  trim: true,
+  lowercase: true,
+  index: true,
+},
     city: {
       type: String,
       trim: true,
