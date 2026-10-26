@@ -56,11 +56,28 @@ function buildSupplierSlugs(users) {
 // Supports MongoDB ID or company slug.
 // ==========================================
 
+
 export const getSupplierProfile = async (req, res) => {
   try {
     const { id: slugOrId } = req.params;
 
-    const users = await User.find({ isActive: true })
+    // Use the same supplier set as the supplier listing API.
+    const productCounts = await Product.aggregate([
+      { $match: { status: "active" } },
+      {
+        $group: {
+          _id: "$seller",
+          productCount: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const sellerIds = productCounts.map((item) => item._id);
+
+    const users = await User.find({
+      _id: { $in: sellerIds },
+      isActive: true,
+    })
       .select("_id name companyName email phone city state createdAt")
       .sort({ _id: 1 })
       .lean();
@@ -69,7 +86,7 @@ export const getSupplierProfile = async (req, res) => {
 
     let supplier = null;
 
-    // 1. First, support existing MongoDB ID URLs.
+    // Support existing MongoDB ID URLs.
     if (mongoose.Types.ObjectId.isValid(slugOrId)) {
       supplier =
         suppliersWithSlugs.find(
@@ -77,7 +94,7 @@ export const getSupplierProfile = async (req, res) => {
         ) || null;
     }
 
-    // 2. If not found by ID, find by generated company slug.
+    // Support company slug URLs.
     if (!supplier) {
       supplier =
         suppliersWithSlugs.find(
@@ -85,7 +102,6 @@ export const getSupplierProfile = async (req, res) => {
         ) || null;
     }
 
-    // 3. Return 404 if no supplier matches.
     if (!supplier) {
       return res.status(404).json({
         success: false,
@@ -93,7 +109,6 @@ export const getSupplierProfile = async (req, res) => {
       });
     }
 
-    // Fetch this supplier's active products.
     const products = await Product.find({
       seller: supplier._id,
       status: "active",
