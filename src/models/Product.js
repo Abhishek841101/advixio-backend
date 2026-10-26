@@ -194,28 +194,21 @@ const productSchema = new mongoose.Schema(
   }
 );
 
-// ==========================================
-// INDEXES
-// ==========================================
+ // ==========================================
+ // INDEXES
+ // ==========================================
+
+// Supports supplier product counts and active product listings.
+productSchema.index({
+  seller: 1,
+  status: 1,
+  createdAt: -1,
+  _id: -1,
+});
 
 // Slug uniqueness is already declared on the slug field.
-// Add the normalizedName unique index only after migration:
-// productSchema.index({ normalizedName: 1 }, { unique: true });
-
-console.log(
-  "NORMALIZED NAME PATH:",
-  productSchema.path("normalizedName")
-);
-
-console.log(
-  "CUSTOM FIELDS PATH:",
-  productSchema.path("customFields")
-);
-
-console.log(
-  "SPECIFICATIONS PATH:",
-  productSchema.path("specifications")
-);
+// Add normalizedName unique index only after migration
+// and resolving existing duplicates.
 
 // ==========================================
 // MODEL
