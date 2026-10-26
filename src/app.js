@@ -5,7 +5,7 @@ import morgan from "morgan";
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
-
+import supplierRoutes from "./routes/supplierRoutes.js";
 const app = express();
 
 app.use(helmet());
@@ -32,5 +32,5 @@ app.get("/api/health", (req, res) => {
 app.use("/api/categories", categoryRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
-
+app.use("/api/suppliers", supplierRoutes);
 export default app;
