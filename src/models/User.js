@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
@@ -45,22 +44,6 @@ const userSchema = new mongoose.Schema(
       trim: true,
     },
 
-    // SEO-friendly unique supplier URL
-    slug: {
-      type: String,
-      trim: true,
-      lowercase: true,
-      unique: true,
-      sparse: true,
-    },
-
-    // Number of currently active products for this supplier
-    activeProductCount: {
-      type: Number,
-      default: 0,
-      min: 0,
-    },
-
     isActive: {
       type: Boolean,
       default: true,
@@ -70,9 +53,6 @@ const userSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
-
-// Query-performance indexes
-userSchema.index({ isActive: 1, createdAt: -1, _id: -1 });
 
 const User = mongoose.model("User", userSchema);
 

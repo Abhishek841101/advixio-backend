@@ -7,11 +7,10 @@ import {
 
 const router = express.Router();
 
-// GET /api/suppliers?search=steel&page=1&limit=20
+// GET /api/suppliers
 router.get("/", getSuppliers);
 
 // GET /api/suppliers/:id
-// Supports MongoDB IDs and persisted supplier slugs.
 router.get("/:id", getSupplierProfile);
 
 export default router;
