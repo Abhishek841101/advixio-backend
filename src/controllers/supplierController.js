@@ -3,33 +3,53 @@ import mongoose from "mongoose";
 import User from "../models/User.js";
 import Product from "../models/Product.js";
 
-// ==========================================
-// GET SUPPLIER PROFILE + ACTIVE PRODUCTS
-// GET /api/suppliers/:id
-// ==========================================
+function makeSlug(value = "") {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
 
 export const getSupplierProfile = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // 1. Validate supplier MongoDB ID
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid supplier ID",
-      });
+    // First try an exact MongoDB User ID.
+    let supplier = null;
+
+    if (mongoose.Types.ObjectId.isValid(id)) {
+      supplier = await User.findOne({
+        _id: id,
+        isActive: true,
+      })
+        .select("_id name companyName email phone city state createdAt")
+        .lean();
     }
 
-    // 2. Fetch supplier details
-    // Never return the password field.
-    const supplier = await User.findOne({
-      _id: id,
-      isActive: true,
-    })
-      .select(
-        "_id name companyName email phone city state createdAt"
-      )
-      .lean();
+    // If not an ID, find the supplier by company-name slug.
+    if (!supplier) {
+      const users = await User.find({ isActive: true })
+        .select("_id name companyName email phone city state createdAt")
+        .lean();
+
+      const matches = users.filter((user) => {
+        const companySlug = makeSlug(user.companyName || "");
+        const nameSlug = makeSlug(user.name || "");
+
+        return companySlug === id || nameSlug === id;
+      });
+
+      if (matches.length > 1) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "This supplier slug is ambiguous. Use the supplier's MongoDB ID or create unique supplier slugs.",
+        });
+      }
+
+      supplier = matches[0] || null;
+    }
 
     if (!supplier) {
       return res.status(404).json({
@@ -38,7 +58,6 @@ export const getSupplierProfile = async (req, res) => {
       });
     }
 
-    // 3. Fetch this supplier's active products
     const products = await Product.find({
       seller: supplier._id,
       status: "active",
@@ -50,7 +69,6 @@ export const getSupplierProfile = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    // 4. Return real database data
     return res.status(200).json({
       success: true,
       data: {
@@ -65,9 +83,6 @@ export const getSupplierProfile = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch supplier profile",
-      ...(process.env.NODE_ENV === "development"
-        ? { error: error.message }
-        : {}),
     });
   }
 };
