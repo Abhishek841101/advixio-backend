@@ -86,3 +86,64 @@ export const getSupplierProfile = async (req, res) => {
     });
   }
 };
+
+export const getSuppliers = async (req, res) => {
+  try {
+    // Count active products for each seller.
+    const productCounts = await Product.aggregate([
+      {
+        $match: {
+          status: "active",
+        },
+      },
+      {
+        $group: {
+          _id: "$seller",
+          productCount: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const sellerIds = productCounts.map((item) => item._id);
+
+    if (sellerIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: [],
+      });
+    }
+
+    const users = await User.find({
+      _id: { $in: sellerIds },
+      isActive: true,
+    })
+      .select("_id name companyName email phone city state createdAt")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const countMap = new Map(
+      productCounts.map((item) => [
+        String(item._id),
+        item.productCount,
+      ])
+    );
+
+    const suppliers = users.map((supplier) => ({
+      ...supplier,
+      productCount: countMap.get(String(supplier._id)) || 0,
+      slug: String(supplier._id),
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: suppliers,
+    });
+  } catch (error) {
+    console.error("Get suppliers error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch suppliers",
+    });
+  }
+};
