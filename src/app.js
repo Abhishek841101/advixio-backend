@@ -5,6 +5,7 @@ import morgan from "morgan";
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
+import blogRoutes from "./routes/blogRoutes.js";
 import supplierRoutes from "./routes/supplierRoutes.js";
 const app = express();
 
@@ -33,4 +34,5 @@ app.use("/api/categories", categoryRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/suppliers", supplierRoutes);
+app.use("/api/blogs", blogRoutes);
 export default app;
