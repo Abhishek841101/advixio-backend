@@ -7,6 +7,8 @@ import productRoutes from "./routes/productRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import blogRoutes from "./routes/blogRoutes.js";
 import supplierRoutes from "./routes/supplierRoutes.js";
+import enquiryRoutes from "./routes/enquiryRoutes.js";
+
 const app = express();
 
 app.use(helmet());
@@ -35,4 +37,5 @@ app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/suppliers", supplierRoutes);
 app.use("/api/blogs", blogRoutes);
+app.use("/api/enquiries", enquiryRoutes);
 export default app;
