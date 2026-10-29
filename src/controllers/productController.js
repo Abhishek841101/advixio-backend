@@ -693,9 +693,9 @@ export const getMyProducts = async (
           "name slug"
         )
         .populate(
-          "seller",
-          "name companyName city state"
-        )
+  "seller",
+  "name email phone companyName city state"
+)
         .sort({
           createdAt: -1,
         });
@@ -749,9 +749,9 @@ export const getProducts = async (
           "name slug"
         )
         .populate(
-          "seller",
-          "name companyName city state"
-        )
+  "seller",
+  "name email phone companyName city state"
+)
         .sort({
           createdAt: -1,
         });
@@ -1384,9 +1384,9 @@ export const getProductsByCategorySlug =
             "active",
         })
           .populate(
-            "seller",
-            "name email companyName"
-          )
+  "seller",
+  "name email phone companyName city state"
+)
           .populate(
             "category",
             "name slug"
