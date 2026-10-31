@@ -6,7 +6,11 @@ import {
   getAdminProfile,
   changeAdminPassword,
 } from "../controllers/adminController.js";
-
+import {
+  getAdminProductStats,
+  getAdminProducts,
+  updateAdminProductStatus,
+} from "../controllers/adminProductController.js";
 import {
   getAdminUsers,
   getAdminUserById,
@@ -43,4 +47,12 @@ router.patch(
   updateAdminUserStatus
 );
 
+// Admin product management
+router.get("/products/stats", adminMiddleware, getAdminProductStats);
+router.get("/products", adminMiddleware, getAdminProducts);
+router.patch(
+  "/products/:id/status",
+  adminMiddleware,
+  updateAdminProductStatus
+);
 export default router;
