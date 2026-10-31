@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import morgan from "morgan";
+import adminRoutes from "./routes/adminRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
@@ -30,7 +31,7 @@ app.get("/api/health", (req, res) => {
     message: "Advixio API is running",
   });
 });
-
+app.use("/api/admin", adminRoutes);
 // Category API
 app.use("/api/categories", categoryRoutes);
 app.use("/api/auth", authRoutes);
