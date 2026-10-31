@@ -29,13 +29,30 @@ export const getAdminUsers = async (req, res) => {
       });
     }
 
-    // Count active products for each seller
+    // Count products for each seller
     const productCounts = await Product.aggregate([
-      { $match: { isActive: true, seller: { $ne: null } } },
+      {
+        $match: {
+          seller: { $ne: null },
+        },
+      },
       {
         $group: {
           _id: "$seller",
-          activeProductCount: { $sum: 1 },
+
+          totalProductCount: {
+            $sum: 1,
+          },
+
+          activeProductCount: {
+            $sum: {
+              $cond: [
+                { $eq: ["$status", "active"] },
+                1,
+                0,
+              ],
+            },
+          },
         },
       },
     ]);
@@ -43,7 +60,10 @@ export const getAdminUsers = async (req, res) => {
     const productCountMap = new Map(
       productCounts.map((item) => [
         String(item._id),
-        item.activeProductCount,
+        {
+          totalProductCount: item.totalProductCount,
+          activeProductCount: item.activeProductCount,
+        },
       ])
     );
 
@@ -81,12 +101,16 @@ export const getAdminUsers = async (req, res) => {
       User.countDocuments(filter),
     ]);
 
-    const formattedUsers = users.map((user) => ({
-      ...user,
-      activeProductCount:
-        productCountMap.get(String(user._id)) || 0,
-      isSupplier: productCountMap.has(String(user._id)),
-    }));
+    const formattedUsers = users.map((user) => {
+      const stats = productCountMap.get(String(user._id));
+
+      return {
+        ...user,
+        totalProductCount: stats?.totalProductCount || 0,
+        activeProductCount: stats?.activeProductCount || 0,
+        isSupplier: Boolean(stats),
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -133,10 +157,13 @@ export const getAdminUserById = async (req, res) => {
     }
 
     const [totalProductCount, activeProductCount] = await Promise.all([
-      Product.countDocuments({ seller: user._id }),
       Product.countDocuments({
         seller: user._id,
-        isActive: true,
+      }),
+
+      Product.countDocuments({
+        seller: user._id,
+        status: "active",
       }),
     ]);
 
@@ -146,7 +173,7 @@ export const getAdminUserById = async (req, res) => {
         ...user,
         totalProductCount,
         activeProductCount,
-        isSupplier: activeProductCount > 0,
+        isSupplier: totalProductCount > 0,
       },
     });
   } catch (error) {
