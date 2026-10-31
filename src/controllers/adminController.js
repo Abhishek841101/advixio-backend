@@ -1,201 +1,312 @@
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
-import Admin from "../models/Admin.js";
 
+import mongoose from "mongoose";
+import User from "../models/User.js";
+import Product from "../models/Product.js";
 
-// ========================================
-// SUPER ADMIN LOGIN
-// ========================================
+// Escape special characters for safe regex search
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-export const adminLogin = async (req, res) => {
+// GET /api/admin/users
+// GET /api/admin/users?type=supplier
+// GET /api/admin/users?search=abc&page=1&limit=20
+export const getAdminUsers = async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required.",
-      });
-    }
-
-    if (!process.env.ADMIN_JWT_SECRET) {
-      return res.status(500).json({
-        success: false,
-        message: "Admin authentication is not configured.",
-      });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-
-    const admin = await Admin.findOne({
-      email: normalizedEmail,
-    }).select("+password");
-
-    if (!admin) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password.",
-      });
-    }
-
-    if (!admin.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: "Your admin account is inactive.",
-      });
-    }
-
-    const isPasswordCorrect = await bcrypt.compare(
-      password,
-      admin.password
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(
+      100,
+      Math.max(1, parseInt(req.query.limit, 10) || 20)
     );
 
-    if (!isPasswordCorrect) {
-      return res.status(401).json({
+    const skip = (page - 1) * limit;
+    const type = req.query.type || "all";
+    const search = String(req.query.search || "").trim();
+
+    if (!["all", "supplier", "buyer"].includes(type)) {
+      return res.status(400).json({
         success: false,
-        message: "Invalid email or password.",
+        message: "Invalid user type.",
       });
     }
 
-    if (admin.role !== "superadmin") {
-      return res.status(403).json({
-        success: false,
-        message: "Super Admin access required.",
-      });
-    }
-
-    const token = jwt.sign(
+    // Count active products for each seller
+    const productCounts = await Product.aggregate([
+      { $match: { isActive: true, seller: { $ne: null } } },
       {
-        adminId: admin._id,
-        role: admin.role,
+        $group: {
+          _id: "$seller",
+          activeProductCount: { $sum: 1 },
+        },
       },
-      process.env.ADMIN_JWT_SECRET,
-      {
-        expiresIn: "1d",
+    ]);
+
+    const productCountMap = new Map(
+      productCounts.map((item) => [
+        String(item._id),
+        item.activeProductCount,
+      ])
+    );
+
+    const supplierIds = productCounts.map((item) => item._id);
+
+    const filter = {};
+
+    if (type === "supplier") {
+      filter._id = { $in: supplierIds };
+    } else if (type === "buyer") {
+      filter._id = { $nin: supplierIds };
+    }
+
+    if (search) {
+      const regex = new RegExp(escapeRegex(search), "i");
+
+      filter.$or = [
+        { name: regex },
+        { email: regex },
+        { phone: regex },
+        { companyName: regex },
+        { city: regex },
+        { state: regex },
+      ];
+    }
+
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .select("-password")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+
+      User.countDocuments(filter),
+    ]);
+
+    const formattedUsers = users.map((user) => ({
+      ...user,
+      activeProductCount:
+        productCountMap.get(String(user._id)) || 0,
+      isSupplier: productCountMap.has(String(user._id)),
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: formattedUsers,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    });
+  } catch (error) {
+    console.error("Admin Get Users Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch users.",
+    });
+  }
+};
+
+
+// GET /api/admin/users/:id
+export const getAdminUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID.",
+      });
+    }
+
+    const user = await User.findById(id)
+      .select("-password")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
+
+    const [totalProductCount, activeProductCount] = await Promise.all([
+      Product.countDocuments({ seller: user._id }),
+      Product.countDocuments({
+        seller: user._id,
+        isActive: true,
+      }),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        ...user,
+        totalProductCount,
+        activeProductCount,
+        isSupplier: activeProductCount > 0,
+      },
+    });
+  } catch (error) {
+    console.error("Admin Get User Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch user details.",
+    });
+  }
+};
+
+
+// PUT /api/admin/users/:id
+export const updateAdminUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID.",
+      });
+    }
+
+    const allowedFields = [
+      "name",
+      "email",
+      "phone",
+      "companyName",
+      "city",
+      "state",
+    ];
+
+    const updates = {};
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates[field] =
+          typeof req.body[field] === "string"
+            ? req.body[field].trim()
+            : req.body[field];
       }
-    );
+    }
 
-    admin.lastLogin = new Date();
-    await admin.save();
+    if (updates.name !== undefined && !updates.name) {
+      return res.status(400).json({
+        success: false,
+        message: "Name is required.",
+      });
+    }
+
+    if (updates.email !== undefined) {
+      updates.email = updates.email.toLowerCase();
+
+      if (!updates.email) {
+        return res.status(400).json({
+          success: false,
+          message: "Email is required.",
+        });
+      }
+
+      const existingUser = await User.findOne({
+        email: updates.email,
+        _id: { $ne: id },
+      });
+
+      if (existingUser) {
+        return res.status(409).json({
+          success: false,
+          message: "This email is already registered.",
+        });
+      }
+    }
+
+    const user = await User.findByIdAndUpdate(
+      id,
+      { $set: updates },
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found.",
+      });
+    }
 
     return res.status(200).json({
       success: true,
-      message: "Super Admin login successful.",
-      token,
-      admin: {
-        id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
-        lastLogin: admin.lastLogin,
-      },
+      message: "User updated successfully.",
+      data: user,
     });
   } catch (error) {
-    console.error("Admin Login Error:", error);
+    console.error("Admin Update User Error:", error);
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Email is already registered.",
+      });
+    }
 
     return res.status(500).json({
       success: false,
-      message: "Server error during admin login.",
+      message: "Unable to update user.",
     });
   }
 };
 
 
-// ========================================
-// GET LOGGED-IN ADMIN PROFILE
-// ========================================
-
-export const getAdminProfile = async (req, res) => {
+// PATCH /api/admin/users/:id/status
+export const updateAdminUserStatus = async (req, res) => {
   try {
-    const admin = await Admin.findById(req.admin._id);
+    const { id } = req.params;
+    const { isActive } = req.body;
 
-    if (!admin) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID.",
+      });
+    }
+
+    if (typeof isActive !== "boolean") {
+      return res.status(400).json({
+        success: false,
+        message: "isActive must be true or false.",
+      });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      id,
+      { $set: { isActive } },
+      { new: true, runValidators: true }
+    ).select("-password");
+
+    if (!user) {
       return res.status(404).json({
         success: false,
-        message: "Admin not found.",
+        message: "User not found.",
       });
     }
 
     return res.status(200).json({
       success: true,
-      admin: {
-        id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
-        isActive: admin.isActive,
-        lastLogin: admin.lastLogin,
-        createdAt: admin.createdAt,
-      },
+      message: isActive
+        ? "User activated successfully."
+        : "User deactivated successfully.",
+      data: user,
     });
   } catch (error) {
-    console.error("Get Admin Profile Error:", error);
+    console.error("Admin Update User Status Error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to fetch admin profile.",
-    });
-  }
-};
-
-
-// ========================================
-// CHANGE ADMIN PASSWORD
-// ========================================
-
-export const changeAdminPassword = async (req, res) => {
-  try {
-    const { currentPassword, newPassword } = req.body;
-
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({
-        success: false,
-        message: "Current password and new password are required.",
-      });
-    }
-
-    if (newPassword.length < 12) {
-      return res.status(400).json({
-        success: false,
-        message: "New password must be at least 12 characters long.",
-      });
-    }
-
-    const admin = await Admin.findById(req.admin._id).select("+password");
-
-    if (!admin) {
-      return res.status(404).json({
-        success: false,
-        message: "Admin not found.",
-      });
-    }
-
-    const isPasswordCorrect = await bcrypt.compare(
-      currentPassword,
-      admin.password
-    );
-
-    if (!isPasswordCorrect) {
-      return res.status(400).json({
-        success: false,
-        message: "Current password is incorrect.",
-      });
-    }
-
-    admin.password = await bcrypt.hash(newPassword, 12);
-
-    await admin.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Admin password changed successfully. Please login again.",
-    });
-  } catch (error) {
-    console.error("Change Admin Password Error:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Unable to change admin password.",
+      message: "Unable to update user status.",
     });
   }
 };
