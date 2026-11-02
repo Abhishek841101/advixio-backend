@@ -231,7 +231,6 @@ export const updateProfile = async (req, res) => {
       }
     }
 
-    // Name validation
     if (updates.name !== undefined && !updates.name) {
       return res.status(400).json({
         success: false,
@@ -239,7 +238,6 @@ export const updateProfile = async (req, res) => {
       });
     }
 
-    // Phone validation
     if (updates.phone !== undefined) {
       if (
         updates.phone &&
@@ -256,9 +254,13 @@ export const updateProfile = async (req, res) => {
       }
     }
 
-    // Profile image upload
+    // Upload profile image to Cloudinary
     if (req.file) {
-      updates.profileImage = req.file.path;
+      const uploadedImage = await uploadProfileImage(
+        req.file.buffer
+      );
+
+      updates.profileImage = uploadedImage.secure_url;
     }
 
     const user = await User.findByIdAndUpdate(
@@ -282,17 +284,16 @@ export const updateProfile = async (req, res) => {
       message: "Profile updated successfully",
       data: user,
     });
-
   } catch (error) {
     console.error("Update profile error:", error);
 
     return res.status(500).json({
       success: false,
       message: "Failed to update profile",
+      error: error.message,
     });
   }
 };
-
 
 // CHANGE PASSWORD
 export const changePassword = async (req, res) => {

@@ -31,7 +31,10 @@ const userSchema = new mongoose.Schema(
       minlength: 6,
       select: false,
     },
-
+profileImage: {
+  type: String,
+  default: "",
+},
     // Business Information
     companyName: {
       type: String,
