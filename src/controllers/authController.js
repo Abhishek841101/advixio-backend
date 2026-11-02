@@ -165,3 +165,185 @@ export const login = async (req, res) => {
     });
   }
 };
+
+
+// Add these functions inside authController.js
+
+// GET COMPLETE PROFILE
+export const getProfile = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    console.error("Get profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch profile",
+    });
+  }
+};
+
+
+// UPDATE PROFILE
+export const updateProfile = async (req, res) => {
+  try {
+    const allowedFields = [
+      "name",
+      "phone",
+      "companyName",
+      "businessType",
+      "gstNumber",
+      "businessDescription",
+      "address",
+      "city",
+      "state",
+      "pincode",
+    ];
+
+    const updates = {};
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        if (typeof req.body[field] !== "string") {
+          return res.status(400).json({
+            success: false,
+            message: `Invalid value for ${field}`,
+          });
+        }
+
+        updates[field] = req.body[field].trim();
+      }
+    }
+
+    if (updates.name !== undefined && !updates.name) {
+      return res.status(400).json({
+        success: false,
+        message: "Name cannot be empty",
+      });
+    }
+
+    if (updates.phone !== undefined) {
+      if (
+        updates.phone &&
+        !/^[0-9+\-\s()]{7,20}$/.test(updates.phone)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid phone number",
+        });
+      }
+
+      if (updates.phone !== req.user.phone) {
+        updates.isPhoneVerified = false;
+      }
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { $set: updates },
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: user,
+    });
+  } catch (error) {
+    console.error("Update profile error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update profile",
+    });
+  }
+};
+
+
+// CHANGE PASSWORD
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password and new password are required",
+      });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 8 characters",
+      });
+    }
+
+    if (newPassword === currentPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be different",
+      });
+    }
+
+    const user = await User.findById(req.user._id).select(
+      "+password"
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const isValid = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 12);
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password changed successfully. Please login again.",
+    });
+  } catch (error) {
+    console.error("Change password error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to change password",
+    });
+  }
+};
