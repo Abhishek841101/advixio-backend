@@ -84,11 +84,11 @@ export const register = async (req, res) => {
     });
   }
 };
+
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Required fields
     if (!email || !password) {
       return res.status(400).json({
         success: false,
@@ -96,10 +96,10 @@ export const login = async (req, res) => {
       });
     }
 
-    // Find user
+    // Fetch password explicitly because select:false is set in User model
     const user = await User.findOne({
       email: email.toLowerCase().trim(),
-    });
+    }).select("+password");
 
     if (!user) {
       return res.status(401).json({
@@ -108,7 +108,6 @@ export const login = async (req, res) => {
       });
     }
 
-    // Check active account
     if (!user.isActive) {
       return res.status(403).json({
         success: false,
@@ -116,7 +115,7 @@ export const login = async (req, res) => {
       });
     }
 
-    // Compare password
+    // Verify password
     const isPasswordValid = await bcrypt.compare(
       password,
       user.password
@@ -129,7 +128,7 @@ export const login = async (req, res) => {
       });
     }
 
-    // Create JWT
+    // Generate JWT
     const token = jwt.sign(
       {
         userId: user._id.toString(),
@@ -140,7 +139,7 @@ export const login = async (req, res) => {
       }
     );
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       message: "Login successful",
       data: {
@@ -152,19 +151,23 @@ export const login = async (req, res) => {
           companyName: user.companyName,
           city: user.city,
           state: user.state,
+          isEmailVerified: user.isEmailVerified,
+          isPhoneVerified: user.isPhoneVerified,
         },
         token,
       },
     });
+
   } catch (error) {
     console.error("Login error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Failed to login",
     });
   }
 };
+
 
 
 // Add these functions inside authController.js
