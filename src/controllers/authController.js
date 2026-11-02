@@ -200,6 +200,7 @@ export const getProfile = async (req, res) => {
 
 
 // UPDATE PROFILE
+
 export const updateProfile = async (req, res) => {
   try {
     const allowedFields = [
@@ -230,6 +231,7 @@ export const updateProfile = async (req, res) => {
       }
     }
 
+    // Name validation
     if (updates.name !== undefined && !updates.name) {
       return res.status(400).json({
         success: false,
@@ -237,6 +239,7 @@ export const updateProfile = async (req, res) => {
       });
     }
 
+    // Phone validation
     if (updates.phone !== undefined) {
       if (
         updates.phone &&
@@ -251,6 +254,11 @@ export const updateProfile = async (req, res) => {
       if (updates.phone !== req.user.phone) {
         updates.isPhoneVerified = false;
       }
+    }
+
+    // Profile image upload
+    if (req.file) {
+      updates.profileImage = req.file.path;
     }
 
     const user = await User.findByIdAndUpdate(
@@ -274,6 +282,7 @@ export const updateProfile = async (req, res) => {
       message: "Profile updated successfully",
       data: user,
     });
+
   } catch (error) {
     console.error("Update profile error:", error);
 
