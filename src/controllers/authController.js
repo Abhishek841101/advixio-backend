@@ -2,6 +2,29 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import cloudinary from "../config/cloudinary.js";
+
+
+
+const uploadProfileImage = (buffer) => {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      {
+        folder: "advixio/profile-images",
+        resource_type: "image",
+      },
+      (error, result) => {
+        if (error) {
+          return reject(error);
+        }
+
+        resolve(result);
+      }
+    );
+
+    stream.end(buffer);
+  });
+};
+
 export const register = async (req, res) => {
   try {
     const {
