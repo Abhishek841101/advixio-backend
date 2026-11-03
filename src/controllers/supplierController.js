@@ -78,7 +78,7 @@ export const getSupplierProfile = async (req, res) => {
       _id: { $in: sellerIds },
       isActive: true,
     })
-      .select("_id name companyName email phone city state createdAt")
+      .select("_id name companyName email phone city state profileImage createdAt")
       .sort({ _id: 1 })
       .lean();
 
@@ -133,6 +133,7 @@ export const getSupplierProfile = async (req, res) => {
           state: supplier.state || "",
           createdAt: supplier.createdAt,
           slug: supplier.slug,
+          profileImage: supplier.profileImage || "",
         },
         productCount: products.length,
         products,
@@ -187,7 +188,7 @@ export const getSuppliers = async (req, res) => {
       },
       isActive: true,
     })
-      .select("_id name companyName email phone city state createdAt")
+      .select("_id name companyName email phone city state profileImage createdAt")
       .sort({ _id: 1 })
       .lean();
 
@@ -210,6 +211,7 @@ export const getSuppliers = async (req, res) => {
       state: supplier.state || "",
       createdAt: supplier.createdAt,
       slug: supplier.slug,
+      profileImage: supplier.profileImage || "",
       productCount: countMap.get(String(supplier._id)) || 0,
     }));
 
