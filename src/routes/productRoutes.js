@@ -3,6 +3,7 @@ import express from "express";
 
 import protect from "../middleware/authMiddleware.js";
 import upload from "../middleware/uploadMiddleware.js";
+import bulkExcelUpload from "../middleware/bulkExcelUploadMiddleware.js";
 
 import {
   createProduct,
@@ -12,34 +13,38 @@ import {
   updateProduct,
   deleteProduct,
   getProductsByCategorySlug,
+  bulkUploadProducts,
 } from "../controllers/productController.js";
 
 const router = express.Router();
 
-// Authenticated user's listings — before /:slug
-router.get("/my-listings", protect, getMyProducts);
-
-// All active products
-router.get("/", getProducts);
-
-// Products by category slug — before /:slug
-router.get("/category/:slug", getProductsByCategorySlug);
-
-// Single product by slug
-router.get("/:slug", getProductBySlug);
-
-// Create product
+// Bulk Excel Upload
 router.post(
-  "/",
+  "/bulk-upload",
   protect,
-  upload.array("images", 3),
-  createProduct
+  bulkExcelUpload.single("file"),
+  bulkUploadProducts
 );
 
-// Update product by MongoDB ID
+// My listings
+router.get("/my-listings", protect, getMyProducts);
+
+// All products
+router.get("/", getProducts);
+
+// Category products
+router.get("/category/:slug", getProductsByCategorySlug);
+
+// Create product
+router.post("/", protect, upload.array("images", 3), createProduct);
+
+// Update product
 router.put("/:id", protect, updateProduct);
 
-// Delete product by MongoDB ID
+// Delete product
 router.delete("/:id", protect, deleteProduct);
+
+// Single product
+router.get("/:slug", getProductBySlug);
 
 export default router;

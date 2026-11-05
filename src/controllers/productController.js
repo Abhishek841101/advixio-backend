@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
-
+import XLSX from "xlsx";
 // ==========================================
 // CREATE SLUG
 // ==========================================
@@ -1423,3 +1423,306 @@ export const getProductsByCategorySlug =
       });
     }
   };
+  // ==========================================
+// BULK EXCEL PRODUCT UPLOAD
+// ==========================================
+
+const normalizeExcelHeader = (value) => {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+};
+
+const parseExcelPairs = (value, fieldName) => {
+  if (!value) return [];
+
+  // JSON format is also supported
+  if (typeof value === "string" && value.trim().startsWith("[")) {
+    const parsed = JSON.parse(value);
+
+    if (!Array.isArray(parsed)) {
+      throw new Error(`Invalid ${fieldName}`);
+    }
+
+    return fieldName === "Specifications"
+      ? cleanSpecifications(parsed)
+      : cleanCustomFields(parsed);
+  }
+
+  const entries = String(value)
+    .split(";")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return entries
+    .map((entry) => {
+      const separatorIndex = entry.indexOf("=");
+
+      if (separatorIndex === -1) {
+        throw new Error(
+          `Invalid ${fieldName} format: ${entry}. Use Name=Value`
+        );
+      }
+
+      const label = entry.slice(0, separatorIndex).trim();
+      const val = entry.slice(separatorIndex + 1).trim();
+
+      if (!label || !val) {
+        throw new Error(`Invalid ${fieldName} entry: ${entry}`);
+      }
+
+      return fieldName === "Specifications"
+        ? { label, value: val }
+        : { name: label, value: val };
+    });
+};
+
+export const bulkUploadProducts = async (req, res) => {
+  try {
+    if (!req.user?._id) {
+      return res.status(401).json({
+        success: false,
+        message: "Authentication required",
+      });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Please upload an Excel file",
+      });
+    }
+
+    const workbook = XLSX.read(req.file.buffer, {
+      type: "buffer",
+    });
+
+    const sheetName = workbook.SheetNames[0];
+
+    if (!sheetName) {
+      return res.status(400).json({
+        success: false,
+        message: "Excel sheet is empty",
+      });
+    }
+
+    const worksheet = workbook.Sheets[sheetName];
+
+    const rawRows = XLSX.utils.sheet_to_json(worksheet, {
+      defval: "",
+      raw: false,
+    });
+
+    const rows = rawRows.filter((row) =>
+      Object.values(row).some(
+        (value) => String(value).trim() !== ""
+      )
+    );
+
+    if (!rows.length) {
+      return res.status(400).json({
+        success: false,
+        message: "No product data found in Excel",
+      });
+    }
+
+    if (rows.length > 500) {
+      return res.status(400).json({
+        success: false,
+        message: "Maximum 500 products can be uploaded at once",
+      });
+    }
+
+    const results = [];
+    const uploadedNames = new Set();
+
+    let createdCount = 0;
+    let failedCount = 0;
+
+    for (let index = 0; index < rows.length; index++) {
+      const excelRowNumber = index + 2;
+
+      try {
+        const row = {};
+
+        // Normalize Excel column names
+        Object.entries(rows[index]).forEach(([key, value]) => {
+          row[normalizeExcelHeader(key)] = value;
+        });
+
+        const getValue = (...keys) => {
+          for (const key of keys) {
+            const value = row[normalizeExcelHeader(key)];
+
+            if (value !== undefined && value !== null) {
+              return String(value).trim();
+            }
+          }
+
+          return "";
+        };
+
+        const name = getValue("Product Name", "Name");
+        const category = getValue("Category");
+
+        if (!name) {
+          throw new Error("Product Name is required");
+        }
+
+        if (!category) {
+          throw new Error("Category is required");
+        }
+
+        const cleanName = name.replace(/\s+/g, " ");
+        const normalizedName = cleanName.toLowerCase();
+
+        // Duplicate within the same Excel file
+        if (uploadedNames.has(normalizedName)) {
+          throw new Error("Duplicate product name in Excel file");
+        }
+
+        // Duplicate in existing database
+        const existingProduct = await Product.findOne({
+          normalizedName,
+        }).select("_id");
+
+        if (existingProduct) {
+          throw new Error("Product name already exists");
+        }
+
+        const categoryExists = await resolveCategory(category);
+
+        if (!categoryExists) {
+          throw new Error("Invalid category");
+        }
+
+        // Price
+        const priceValue = getValue("Price");
+        let parsedPrice;
+
+        if (priceValue !== "") {
+          parsedPrice = Number(priceValue);
+
+          if (!Number.isFinite(parsedPrice) || parsedPrice < 0) {
+            throw new Error("Invalid price");
+          }
+        }
+
+        // Specifications
+        const specifications = parseExcelPairs(
+          getValue("Specifications"),
+          "Specifications"
+        );
+
+        // Custom Fields
+        const customFields = parseExcelPairs(
+          getValue("Custom Fields"),
+          "Custom Fields"
+        );
+
+        // Slug
+        const baseSlug = createSlug(cleanName);
+
+        if (!baseSlug) {
+          throw new Error("Unable to generate product URL");
+        }
+
+        let slug = baseSlug;
+        let slugAttempt = 0;
+
+        while (await Product.exists({ slug })) {
+          slugAttempt++;
+          slug = `${baseSlug}-${Date.now()}-${slugAttempt}`;
+        }
+
+        const productData = {
+          name: cleanName,
+          normalizedName,
+          slug,
+
+          shortDescription: getValue("Short Description"),
+          description: getValue("Description"),
+
+          category: categoryExists._id,
+
+          subcategory: getValue("Subcategory"),
+          brand: getValue("Brand"),
+          model: getValue("Model"),
+
+          price: parsedPrice,
+
+          unit: getValue("Unit") || "Piece",
+
+          // Images are optional
+          images: [],
+
+          specifications,
+          customFields,
+
+          seller: req.user._id,
+
+          companyName: req.user.companyName || "",
+
+          location: {
+            city: req.user.city || "",
+            state: req.user.state || "",
+            country: "India",
+          },
+        };
+
+        const product = await Product.create(productData);
+
+        uploadedNames.add(normalizedName);
+        createdCount++;
+
+        results.push({
+          row: excelRowNumber,
+          name: cleanName,
+          success: true,
+          productId: product._id,
+        });
+
+      } catch (error) {
+        failedCount++;
+
+        results.push({
+          row: excelRowNumber,
+          name: String(
+            rows[index]["Product Name"] ||
+            rows[index]["Name"] ||
+            ""
+          ),
+          success: false,
+          message:
+            error.code === 11000
+              ? "Duplicate product name or URL"
+              : error.message || "Failed to create product",
+        });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Bulk product upload completed",
+      summary: {
+        total: rows.length,
+        created: createdCount,
+        failed: failedCount,
+      },
+      results,
+    });
+
+  } catch (error) {
+    console.error("BULK PRODUCT UPLOAD ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to process Excel file",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : undefined,
+    });
+  }
+};
