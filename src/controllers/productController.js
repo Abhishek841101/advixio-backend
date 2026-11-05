@@ -1158,6 +1158,11 @@ export const updateProduct = async (req, res) => {
 // Existing images + new uploaded images
 // ==========================================
 
+// ==========================================
+// IMAGES
+// Existing images + new uploaded images
+// ==========================================
+
 if (req.body.imageManifest !== undefined) {
   try {
     const imageManifest =
@@ -1166,10 +1171,7 @@ if (req.body.imageManifest !== undefined) {
         : req.body.imageManifest;
 
     if (!Array.isArray(imageManifest)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid image manifest",
-      });
+      throw new Error("Invalid image manifest");
     }
 
     const uploadedFiles = req.files || [];
@@ -1178,33 +1180,32 @@ if (req.body.imageManifest !== undefined) {
       ? product.images
       : [];
 
+    if (imageManifest.length > 10) {
+      throw new Error("Maximum 10 product images allowed");
+    }
+
     const finalImages = [];
+    const referencedFileIndexes = [];
 
     for (const item of imageManifest) {
       if (!item || typeof item !== "object") {
-        return res.status(400).json({
-          success: false,
-          message: "Invalid image entry",
-        });
+        throw new Error("Invalid image entry");
       }
 
-      // Keep an existing image only if it belongs to this product.
+      // EXISTING IMAGE
       if (item.type === "existing") {
         if (
           typeof item.url !== "string" ||
           !existingProductImages.includes(item.url)
         ) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid existing product image",
-          });
+          throw new Error("Invalid existing product image");
         }
 
         finalImages.push(item.url);
         continue;
       }
 
-      // Add a newly uploaded image.
+      // NEW IMAGE
       if (item.type === "new") {
         const fileIndex = Number(item.fileIndex);
 
@@ -1213,64 +1214,49 @@ if (req.body.imageManifest !== undefined) {
           fileIndex < 0 ||
           fileIndex >= uploadedFiles.length
         ) {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid uploaded image reference",
-          });
+          throw new Error("Invalid uploaded image reference");
+        }
+
+        if (referencedFileIndexes.includes(fileIndex)) {
+          throw new Error("Duplicate uploaded image reference");
         }
 
         const uploadedImage = uploadedFiles[fileIndex];
 
+        // Same upload result format as Create Product
         if (
           !uploadedImage ||
           !uploadedImage.path ||
           !uploadedImage.mimetype?.startsWith("image/")
         ) {
-          return res.status(400).json({
-            success: false,
-            message: "Uploaded image is invalid",
-          });
+          throw new Error("Uploaded image is invalid");
         }
 
+        referencedFileIndexes.push(fileIndex);
+
+        // Save uploaded image URL
         finalImages.push(uploadedImage.path);
         continue;
       }
 
-      return res.status(400).json({
-        success: false,
-        message: "Unknown image type",
-      });
+      throw new Error("Unknown image type");
     }
-
-    // Every uploaded file must be included in the manifest.
-    const referencedFileIndexes = imageManifest
-      .filter((item) => item?.type === "new")
-      .map((item) => Number(item.fileIndex));
 
     if (referencedFileIndexes.length !== uploadedFiles.length) {
-      return res.status(400).json({
-        success: false,
-        message: "Image upload data does not match image manifest",
-      });
-    }
-
-    if (
-      new Set(referencedFileIndexes).size !==
-      referencedFileIndexes.length
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Duplicate uploaded image reference",
-      });
+      throw new Error(
+        "Image upload data does not match image manifest"
+      );
     }
 
     product.images = finalImages;
+
+    console.log("UPDATED PRODUCT IMAGES:", product.images);
   } catch (error) {
     console.error("IMAGE UPDATE ERROR:", error);
 
     return res.status(400).json({
       success: false,
-      message: "Invalid image update data",
+      message: error.message || "Invalid image update data",
     });
   }
 }
