@@ -351,7 +351,21 @@ export const createProduct = async (req, res) => {
     // ==========================================
 
     const uploadedFiles = req.files || [];
+console.log("========== UPDATE IMAGE DEBUG ==========");
+console.log("FILES COUNT:", uploadedFiles.length);
 
+uploadedFiles.forEach((file, index) => {
+  console.log(`FILE ${index}:`, {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    path: file.path,
+    hasBuffer: !!file.buffer,
+    size: file.size,
+    keys: Object.keys(file),
+  });
+});
+
+console.log("IMAGE MANIFEST:", req.body.imageManifest);
     if (uploadedFiles.length > 3) {
       return res.status(400).json({
         success: false,
