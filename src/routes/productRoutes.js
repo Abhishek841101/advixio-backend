@@ -39,7 +39,13 @@ router.get("/category/:slug", getProductsByCategorySlug);
 router.post("/", protect, upload.array("images", 3), createProduct);
 
 // Update product
-router.put("/:id", protect, updateProduct);
+router.put(
+  "/:id",
+  protect,
+  upload.array("newImages"),
+  updateProduct
+);
+// router.put("/:id", protect, updateProduct);
 
 // Delete product
 router.delete("/:id", protect, deleteProduct);

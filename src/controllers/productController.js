@@ -1153,30 +1153,127 @@ export const updateProduct = async (req, res) => {
     // IMAGES
     // ==========================================
 
-    if (req.files && req.files.length > 0) {
-      if (req.files.length > 3) {
-        return res.status(400).json({
-          success: false,
-          message: "You can upload maximum 3 images",
-        });
-      }
+    // ==========================================
+// IMAGES
+// Existing images + new uploaded images
+// ==========================================
 
-      const newImages = req.files
-        .map((file) => file.path)
-        .filter(Boolean);
+if (req.body.imageManifest !== undefined) {
+  try {
+    const imageManifest =
+      typeof req.body.imageManifest === "string"
+        ? JSON.parse(req.body.imageManifest)
+        : req.body.imageManifest;
 
-      if (newImages.length !== req.files.length) {
-        return res.status(400).json({
-          success: false,
-          message: "One or more uploaded images are invalid",
-        });
-      }
-
-      // New uploads replace the existing image array,
-      // matching the previous controller's behavior.
-      product.images = newImages;
+    if (!Array.isArray(imageManifest)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid image manifest",
+      });
     }
 
+    const uploadedFiles = req.files || [];
+
+    const existingProductImages = Array.isArray(product.images)
+      ? product.images
+      : [];
+
+    const finalImages = [];
+
+    for (const item of imageManifest) {
+      if (!item || typeof item !== "object") {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid image entry",
+        });
+      }
+
+      // Keep an existing image only if it belongs to this product.
+      if (item.type === "existing") {
+        if (
+          typeof item.url !== "string" ||
+          !existingProductImages.includes(item.url)
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid existing product image",
+          });
+        }
+
+        finalImages.push(item.url);
+        continue;
+      }
+
+      // Add a newly uploaded image.
+      if (item.type === "new") {
+        const fileIndex = Number(item.fileIndex);
+
+        if (
+          !Number.isInteger(fileIndex) ||
+          fileIndex < 0 ||
+          fileIndex >= uploadedFiles.length
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid uploaded image reference",
+          });
+        }
+
+        const uploadedImage = uploadedFiles[fileIndex];
+
+        if (
+          !uploadedImage ||
+          !uploadedImage.path ||
+          !uploadedImage.mimetype?.startsWith("image/")
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "Uploaded image is invalid",
+          });
+        }
+
+        finalImages.push(uploadedImage.path);
+        continue;
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: "Unknown image type",
+      });
+    }
+
+    // Every uploaded file must be included in the manifest.
+    const referencedFileIndexes = imageManifest
+      .filter((item) => item?.type === "new")
+      .map((item) => Number(item.fileIndex));
+
+    if (referencedFileIndexes.length !== uploadedFiles.length) {
+      return res.status(400).json({
+        success: false,
+        message: "Image upload data does not match image manifest",
+      });
+    }
+
+    if (
+      new Set(referencedFileIndexes).size !==
+      referencedFileIndexes.length
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Duplicate uploaded image reference",
+      });
+    }
+
+    product.images = finalImages;
+  } catch (error) {
+    console.error("IMAGE UPDATE ERROR:", error);
+
+    return res.status(400).json({
+      success: false,
+      message: "Invalid image update data",
+    });
+  }
+}
     // ==========================================
     // SAVE
     // ==========================================
