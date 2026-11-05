@@ -2,10 +2,38 @@ import mongoose from "mongoose";
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
 import XLSX from "xlsx";
+import cloudinary from "../config/cloudinary.js";
+import streamifier from "streamifier";
 // ==========================================
 // CREATE SLUG
 // ==========================================
 
+
+const uploadToCloudinary = (buffer) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: "advixio/products",
+        resource_type: "image",
+      },
+      (error, result) => {
+        if (error) {
+          return reject(error);
+        }
+
+        if (!result?.secure_url) {
+          return reject(
+            new Error("Cloudinary image upload failed")
+          );
+        }
+
+        resolve(result.secure_url);
+      }
+    );
+
+    streamifier.createReadStream(buffer).pipe(uploadStream);
+  });
+};
 const createSlug = (text) => {
   return String(text)
     .toLowerCase()
@@ -351,10 +379,12 @@ export const createProduct = async (req, res) => {
     // ==========================================
 
     const uploadedFiles = req.files || [];
-console.log("========== UPDATE IMAGE DEBUG ==========");
-console.log("FILES COUNT:", uploadedFiles.length);
 
-uploadedFiles.forEach((file, index) => {
+console.log("========== UPDATE IMAGE DEBUG ==========");
+
+console.log("FILES COUNT:", req.files?.length);
+
+req.files?.forEach((file, index) => {
   console.log(`FILE ${index}:`, {
     originalname: file.originalname,
     mimetype: file.mimetype,
@@ -366,6 +396,11 @@ uploadedFiles.forEach((file, index) => {
 });
 
 console.log("IMAGE MANIFEST:", req.body.imageManifest);
+
+console.log("========================================");
+
+
+
     if (uploadedFiles.length > 3) {
       return res.status(400).json({
         success: false,
@@ -1220,38 +1255,53 @@ if (req.body.imageManifest !== undefined) {
       }
 
       // NEW IMAGE
-      if (item.type === "new") {
-        const fileIndex = Number(item.fileIndex);
+      // NEW IMAGE
+if (item.type === "new") {
+  const fileIndex = Number(item.fileIndex);
 
-        if (
-          !Number.isInteger(fileIndex) ||
-          fileIndex < 0 ||
-          fileIndex >= uploadedFiles.length
-        ) {
-          throw new Error("Invalid uploaded image reference");
-        }
+  if (
+    !Number.isInteger(fileIndex) ||
+    fileIndex < 0 ||
+    fileIndex >= uploadedFiles.length
+  ) {
+    throw new Error("Invalid uploaded image reference");
+  }
 
-        if (referencedFileIndexes.includes(fileIndex)) {
-          throw new Error("Duplicate uploaded image reference");
-        }
+  if (referencedFileIndexes.includes(fileIndex)) {
+    throw new Error("Duplicate uploaded image reference");
+  }
 
-        const uploadedImage = uploadedFiles[fileIndex];
+  const uploadedImage = uploadedFiles[fileIndex];
 
-        // Same upload result format as Create Product
-        if (
-          !uploadedImage ||
-          !uploadedImage.path ||
-          !uploadedImage.mimetype?.startsWith("image/")
-        ) {
-          throw new Error("Uploaded image is invalid");
-        }
+  if (
+    !uploadedImage ||
+    !Buffer.isBuffer(uploadedImage.buffer) ||
+    !uploadedImage.mimetype?.startsWith("image/")
+  ) {
+    throw new Error("Uploaded image is invalid");
+  }
 
-        referencedFileIndexes.push(fileIndex);
+  referencedFileIndexes.push(fileIndex);
 
-        // Save uploaded image URL
-        finalImages.push(uploadedImage.path);
-        continue;
-      }
+  // IMPORTANT: Wait for Cloudinary response
+  const imageUrl = await uploadToCloudinary(
+    uploadedImage.buffer
+  );
+
+  console.log("CLOUDINARY RETURNED URL:", imageUrl);
+  console.log("URL TYPE:", typeof imageUrl);
+
+  if (
+    typeof imageUrl !== "string" ||
+    !imageUrl.startsWith("https://res.cloudinary.com/")
+  ) {
+    throw new Error("Cloudinary returned an invalid image URL");
+  }
+
+  finalImages.push(imageUrl);
+
+  continue;
+}
 
       throw new Error("Unknown image type");
     }
@@ -1261,7 +1311,28 @@ if (req.body.imageManifest !== undefined) {
         "Image upload data does not match image manifest"
       );
     }
+// ==========================================
+// VALIDATE FINAL IMAGE URLS
+// ==========================================
 
+const validImages = finalImages.filter(
+  (url) =>
+    typeof url === "string" &&
+    url.trim() !== "" &&
+    /^https?:\/\/.+/i.test(url.trim())
+);
+
+if (validImages.length !== finalImages.length) {
+  throw new Error(
+    "Invalid image URL detected. Product was not updated."
+  );
+}
+
+if (validImages.length === 0) {
+  throw new Error("At least one valid product image is required");
+}
+
+product.images = validImages;
     product.images = finalImages;
 
     console.log("UPDATED PRODUCT IMAGES:", product.images);
