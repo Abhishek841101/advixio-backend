@@ -251,3 +251,77 @@ export const updateEnquiryStatus = async (req, res) => {
     });
   }
 };
+
+
+/* =====================================================
+   GET ALL ENQUIRIES FOR ADMIN
+   GET /api/enquiries/admin/all
+   Admin authentication required.
+===================================================== */
+
+export const getAllEnquiriesForAdmin = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      search = "",
+      status = "all",
+    } = req.query;
+
+    const currentPage = Math.max(1, Number(page) || 1);
+    const pageLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+
+    const filter = {};
+
+    if (["new", "contacted", "closed"].includes(status)) {
+      filter.status = status;
+    }
+
+    if (search && String(search).trim()) {
+      const searchRegex = new RegExp(
+        String(search).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+        "i"
+      );
+
+      filter.$or = [
+        { buyerName: searchRegex },
+        { buyerPhone: searchRegex },
+        { message: searchRegex },
+      ];
+    }
+
+    const [enquiries, total] = await Promise.all([
+      Enquiry.find(filter)
+        .populate("product", "name slug images price unit")
+        .populate(
+          "supplier",
+          "name email phone companyName city state isActive"
+        )
+        .sort({ createdAt: -1 })
+        .skip((currentPage - 1) * pageLimit)
+        .limit(pageLimit)
+        .lean(),
+
+      Enquiry.countDocuments(filter),
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      count: enquiries.length,
+      data: enquiries,
+      pagination: {
+        total,
+        page: currentPage,
+        limit: pageLimit,
+        totalPages: Math.ceil(total / pageLimit) || 1,
+      },
+    });
+  } catch (error) {
+    console.error("Get all admin enquiries error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load all enquiries.",
+    });
+  }
+};
