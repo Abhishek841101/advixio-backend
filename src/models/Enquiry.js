@@ -57,7 +57,14 @@ const enquirySchema = new mongoose.Schema(
   }
 );
 
+// Supplier enquiry listing
 enquirySchema.index({ supplier: 1, createdAt: -1 });
+
+// Admin: Latest enquiries
+enquirySchema.index({ createdAt: -1 });
+
+// Admin: Status filter + latest enquiries
+enquirySchema.index({ status: 1, createdAt: -1 });
 
 export default mongoose.models.Enquiry ||
   mongoose.model("Enquiry", enquirySchema);
