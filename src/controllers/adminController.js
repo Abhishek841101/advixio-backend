@@ -7,87 +7,45 @@ import Admin from "../models/Admin.js";
 // SUPER ADMIN LOGIN
 // ========================================
 
+
 export const adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Email and password are required.",
-      });
-    }
+    // TEMPORARY HARDCODED SUPER ADMIN CREDENTIALS
+    const ADMIN_EMAIL = "admin@advixio360.com";
+    const ADMIN_PASSWORD = "Advixio@(12)";
 
-    if (!process.env.ADMIN_JWT_SECRET) {
-      return res.status(500).json({
-        success: false,
-        message: "Admin authentication is not configured.",
-      });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-
-    const admin = await Admin.findOne({
-      email: normalizedEmail,
-    }).select("+password");
-
-    if (!admin) {
+    if (
+      email?.trim().toLowerCase() !== ADMIN_EMAIL ||
+      password !== ADMIN_PASSWORD
+    ) {
       return res.status(401).json({
         success: false,
-        message: "Invalid email or password.",
-      });
-    }
-
-    if (!admin.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: "Your admin account is inactive.",
-      });
-    }
-
-    const isPasswordCorrect = await bcrypt.compare(
-      password,
-      admin.password
-    );
-
-    if (!isPasswordCorrect) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid email or password.",
-      });
-    }
-
-    if (admin.role !== "superadmin") {
-      return res.status(403).json({
-        success: false,
-        message: "Super Admin access required.",
+        message: "Invalid admin email or password.",
       });
     }
 
     const token = jwt.sign(
       {
-        adminId: admin._id,
-        role: admin.role,
+        adminId: "hardcoded-superadmin",
+        role: "superadmin",
+        authType: "hardcoded",
       },
-      process.env.ADMIN_JWT_SECRET,
-      {
-        expiresIn: "1d",
-      }
+      process.env.ADMIN_JWT_SECRET || "advixio-temporary-admin-secret",
+      { expiresIn: "1d" }
     );
-
-    admin.lastLogin = new Date();
-    await admin.save();
 
     return res.status(200).json({
       success: true,
-      message: "Super Admin login successful.",
+      message: "Admin login successful.",
       token,
       admin: {
-        id: admin._id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
-        lastLogin: admin.lastLogin,
+        id: "hardcoded-superadmin",
+        name: "Super Admin",
+        email: ADMIN_EMAIL,
+        role: "superadmin",
+        lastLogin: new Date(),
       },
     });
   } catch (error) {
@@ -95,7 +53,7 @@ export const adminLogin = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Server error during admin login.",
+      message: "Admin login failed.",
     });
   }
 };

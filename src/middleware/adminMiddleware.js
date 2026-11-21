@@ -1,35 +1,51 @@
+
 import jwt from "jsonwebtoken";
 import Admin from "../models/Admin.js";
+
+const JWT_SECRET =
+  process.env.ADMIN_JWT_SECRET ||
+  "advixio-temporary-admin-secret";
 
 const adminMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!authHeader?.startsWith("Bearer ")) {
       return res.status(401).json({
         success: false,
-        message: "Access denied. Admin token is required.",
+        message: "Admin token required.",
       });
     }
 
     const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, JWT_SECRET);
 
-    if (!process.env.ADMIN_JWT_SECRET) {
-      console.error("ADMIN_JWT_SECRET is missing in environment variables.");
-
-      return res.status(500).json({
+    if (decoded.role !== "superadmin") {
+      return res.status(403).json({
         success: false,
-        message: "Admin authentication configuration error.",
+        message: "Super Admin access required.",
       });
     }
 
-    const decoded = jwt.verify(token, process.env.ADMIN_JWT_SECRET);
+    if (decoded.authType === "hardcoded") {
+      if (decoded.adminId !== "hardcoded-superadmin") {
+        return res.status(401).json({
+          success: false,
+          message: "Invalid admin token.",
+        });
+      }
 
-    if (!decoded.adminId) {
-      return res.status(401).json({
-        success: false,
-        message: "Invalid admin token.",
-      });
+      req.admin = {
+        _id: null,
+        id: "hardcoded-superadmin",
+        name: "Super Admin",
+        email: "admin@advixio360.com",
+        role: "superadmin",
+        isActive: true,
+        isHardcodedAdmin: true,
+      };
+
+      return next();
     }
 
     const admin = await Admin.findById(decoded.adminId);
@@ -37,20 +53,17 @@ const adminMiddleware = async (req, res, next) => {
     if (!admin || !admin.isActive || admin.role !== "superadmin") {
       return res.status(403).json({
         success: false,
-        message: "Admin access is not authorized.",
+        message: "Admin access denied.",
       });
     }
 
     req.admin = admin;
-
     next();
+
   } catch (error) {
     return res.status(401).json({
       success: false,
-      message:
-        error.name === "TokenExpiredError"
-          ? "Admin session expired. Please login again."
-          : "Invalid admin token.",
+      message: "Invalid or expired admin session.",
     });
   }
 };
