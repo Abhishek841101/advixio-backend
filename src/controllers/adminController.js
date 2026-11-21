@@ -63,8 +63,25 @@ export const adminLogin = async (req, res) => {
 // GET LOGGED-IN ADMIN PROFILE
 // ========================================
 
+
 export const getAdminProfile = async (req, res) => {
   try {
+    // HARDCODED SUPER ADMIN
+    if (req.admin?.isHardcodedAdmin) {
+      return res.status(200).json({
+        success: true,
+        admin: {
+          id: "hardcoded-superadmin",
+          name: "Super Admin",
+          email: "admin@advixio360.com",
+          role: "superadmin",
+          isActive: true,
+          lastLogin: new Date(),
+        },
+      });
+    }
+
+    // EXISTING DATABASE ADMIN
     const admin = await Admin.findById(req.admin._id);
 
     if (!admin) {
@@ -86,6 +103,7 @@ export const getAdminProfile = async (req, res) => {
         createdAt: admin.createdAt,
       },
     });
+
   } catch (error) {
     console.error("Get Admin Profile Error:", error);
 
