@@ -1,7 +1,7 @@
+
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import Admin from "../models/Admin.js";
-
 
 // ========================================
 // SUPER ADMIN LOGIN
@@ -11,18 +11,12 @@ export const adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-<<<<<<< HEAD
     if (!email || !password) {
       return res.status(400).json({
         success: false,
         message: "Email and password are required.",
       });
     }
-=======
-    // TEMPORARY HARDCODED SUPER ADMIN CREDENTIALS
-    const ADMIN_EMAIL = "admin@advixio360.com";
-    const ADMIN_PASSWORD = "********";
->>>>>>> 27b1e6a (Fix enq123)
 
     if (!process.env.ADMIN_JWT_SECRET) {
       return res.status(500).json({
@@ -106,7 +100,6 @@ export const adminLogin = async (req, res) => {
   }
 };
 
-
 // ========================================
 // GET LOGGED-IN ADMIN PROFILE
 // ========================================
@@ -143,7 +136,6 @@ export const getAdminProfile = async (req, res) => {
     });
   }
 };
-
 
 // ========================================
 // CHANGE ADMIN PASSWORD
