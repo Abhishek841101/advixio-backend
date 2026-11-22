@@ -16,8 +16,11 @@ const router = express.Router();
 /* Public: no buyer login required */
 router.post("/", createEnquiry);
 
-/* Admin: all suppliers' enquiries */
+/* Admin: all enquiries */
 router.get("/admin/all", adminMiddleware, getAllEnquiriesForAdmin);
+
+/* TEMPORARY: All logged-in users can view all enquiries */
+router.get("/all", protect, getAllEnquiriesForAdmin);
 
 /* Protected supplier dashboard endpoints */
 router.get("/my", protect, getMyEnquiries);
