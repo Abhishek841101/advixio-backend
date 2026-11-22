@@ -251,3 +251,117 @@ export const updateEnquiryStatus = async (req, res) => {
     });
   }
 };
+
+
+/* =====================================================
+   GET ALL ENQUIRIES FOR ADMIN
+   GET /api/enquiries/admin/all
+   Admin authentication required.
+===================================================== */
+
+
+export const getAllEnquiriesForAdmin = async (req, res) => {
+  try {
+    const page = Math.max(
+      1,
+      parseInt(req.query.page, 10) || 1
+    );
+
+    const limit = Math.min(
+      100,
+      Math.max(1, parseInt(req.query.limit, 10) || 20)
+    );
+
+    const search = String(req.query.search || "").trim();
+    const status = String(req.query.status || "all").trim().toLowerCase();
+
+    // Build database filter
+    const filter = {};
+
+    if (["new", "contacted", "closed"].includes(status)) {
+      filter.status = status;
+    }
+
+    // Search buyer name, phone and message
+    if (search) {
+      const escapedSearch = search.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&"
+      );
+
+      const searchRegex = new RegExp(escapedSearch, "i");
+
+      filter.$or = [
+        { buyerName: searchRegex },
+        { buyerPhone: searchRegex },
+        { message: searchRegex },
+      ];
+    }
+
+    // Fetch data and global statistics simultaneously
+    const [
+      enquiries,
+      filteredTotal,
+      total,
+      newCount,
+      contactedCount,
+      closedCount,
+    ] = await Promise.all([
+      Enquiry.find(filter)
+        .populate("product", "name slug images price unit")
+        .populate(
+          "supplier",
+          "name email phone companyName city state isActive"
+        )
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+
+      Enquiry.countDocuments(filter),
+
+      Enquiry.countDocuments(),
+
+      Enquiry.countDocuments({ status: "new" }),
+
+      Enquiry.countDocuments({ status: "contacted" }),
+
+      Enquiry.countDocuments({ status: "closed" }),
+    ]);
+
+    const totalPages = Math.ceil(filteredTotal / limit) || 1;
+
+    return res.status(200).json({
+      success: true,
+      message: "Enquiries fetched successfully.",
+
+      count: enquiries.length,
+
+      data: enquiries,
+
+      stats: {
+        total,
+        new: newCount,
+        contacted: contactedCount,
+        closed: closedCount,
+      },
+
+      pagination: {
+        total: filteredTotal,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    });
+
+  } catch (error) {
+    console.error("Get all admin enquiries error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to load all enquiries.",
+    });
+  }
+};
