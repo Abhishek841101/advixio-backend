@@ -1,0 +1,9 @@
+﻿node_modules/
+.env
+.env.local
+uploads/
+dist/
+build/
+*.log
+.npm-cache/
+package-lock.backup.json
