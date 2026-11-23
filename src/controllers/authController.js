@@ -224,10 +224,12 @@ export const getProfile = async (req, res) => {
 
 // UPDATE PROFILE
 
+
 export const updateProfile = async (req, res) => {
   try {
     const allowedFields = [
       "name",
+      "email", // Added
       "phone",
       "companyName",
       "businessType",
@@ -254,12 +256,59 @@ export const updateProfile = async (req, res) => {
       }
     }
 
+    // Validate name
     if (updates.name !== undefined && !updates.name) {
       return res.status(400).json({
         success: false,
         message: "Name cannot be empty",
       });
     }
+
+    // =====================================
+    // EMAIL UPDATE
+    // =====================================
+
+    if (updates.email !== undefined) {
+      updates.email = updates.email.toLowerCase().trim();
+
+      if (!updates.email) {
+        return res.status(400).json({
+          success: false,
+          message: "Email cannot be empty",
+        });
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (!emailRegex.test(updates.email)) {
+        return res.status(400).json({
+          success: false,
+          message: "Please enter a valid email address",
+        });
+      }
+
+      // Check duplicate email
+      const existingEmail = await User.findOne({
+        email: updates.email,
+        _id: { $ne: req.user._id },
+      });
+
+      if (existingEmail) {
+        return res.status(409).json({
+          success: false,
+          message: "This email is already registered",
+        });
+      }
+
+      // Email changed -> verification reset (no OTP for now)
+      if (updates.email !== req.user.email) {
+        updates.isEmailVerified = false;
+      }
+    }
+
+    // =====================================
+    // PHONE UPDATE
+    // =====================================
 
     if (updates.phone !== undefined) {
       if (
@@ -277,7 +326,10 @@ export const updateProfile = async (req, res) => {
       }
     }
 
-    // Upload profile image to Cloudinary
+    // =====================================
+    // PROFILE IMAGE
+    // =====================================
+
     if (req.file) {
       const uploadedImage = await uploadProfileImage(
         req.file.buffer
@@ -285,6 +337,10 @@ export const updateProfile = async (req, res) => {
 
       updates.profileImage = uploadedImage.secure_url;
     }
+
+    // =====================================
+    // UPDATE USER
+    // =====================================
 
     const user = await User.findByIdAndUpdate(
       req.user._id,
@@ -307,6 +363,7 @@ export const updateProfile = async (req, res) => {
       message: "Profile updated successfully",
       data: user,
     });
+
   } catch (error) {
     console.error("Update profile error:", error);
 
